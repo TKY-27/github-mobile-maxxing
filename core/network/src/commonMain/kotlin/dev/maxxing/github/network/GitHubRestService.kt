@@ -53,14 +53,17 @@ import io.ktor.client.request.patch
 import io.ktor.client.request.post
 import io.ktor.client.request.put
 import io.ktor.client.request.setBody
+import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import io.ktor.http.encodeURLPathPart
 import io.ktor.http.isSuccess
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
@@ -763,6 +766,19 @@ class GitHubRestService(
     private val httpClient: HttpClient,
     private val baseUrl: String = "https://api.github.com"
 ) {
+    private val restJson = Json {
+        ignoreUnknownKeys = true
+        isLenient = true
+        explicitNulls = false
+    }
+
+    private suspend inline fun <reified T> HttpResponse.bodyOrDefaultOnEmpty(defaultValue: () -> T): T {
+        if (status == HttpStatusCode.NoContent) return defaultValue()
+        val raw = bodyAsText()
+        if (raw.isBlank()) return defaultValue()
+        return restJson.decodeFromString(raw)
+    }
+
     suspend fun fetchNotifications(
         all: Boolean = false,
         participating: Boolean = false,
@@ -780,7 +796,7 @@ class GitHubRestService(
         if (!response.status.isSuccess()) {
             throw GitHubApiException(response.status.value, "Failed to load notifications (${response.status.value})")
         }
-        return response.body<List<NotificationDto>>().map { dto ->
+        return response.bodyOrDefaultOnEmpty<List<NotificationDto>> { emptyList() }.map { dto ->
             NotificationThread(
                 id = dto.id,
                 unread = dto.unread,
@@ -830,7 +846,7 @@ class GitHubRestService(
         if (!res.status.isSuccess()) {
             throw GitHubApiException(res.status.value, "Failed to load PR files (${res.status.value})")
         }
-        return res.body<List<PullFileDto>>().map { it.toPullFileChange() }
+        return res.bodyOrDefaultOnEmpty<List<PullFileDto>> { emptyList() }.map { it.toPullFileChange() }
     }
 
     private fun PullFileDto.toPullFileChange(): PullFileChange = PullFileChange(
@@ -863,7 +879,7 @@ class GitHubRestService(
         if (!res.status.isSuccess()) {
             throw GitHubApiException(res.status.value, "Failed to load commits (${res.status.value})")
         }
-        return res.body<List<RestCommitDto>>().map { it.toCommitSummary() }
+        return res.bodyOrDefaultOnEmpty<List<RestCommitDto>> { emptyList() }.map { it.toCommitSummary() }
     }
 
     suspend fun fetchCommitDetail(owner: String, repo: String, sha: String): CommitDetail {
@@ -893,7 +909,7 @@ class GitHubRestService(
         if (!res.status.isSuccess()) {
             throw GitHubApiException(res.status.value, "Failed to load tags (${res.status.value})")
         }
-        return res.body<List<RestTagDto>>().map { TagRef(name = it.name, commitSha = it.commit.sha) }
+        return res.bodyOrDefaultOnEmpty<List<RestTagDto>> { emptyList() }.map { TagRef(name = it.name, commitSha = it.commit.sha) }
     }
 
     suspend fun compareRefs(
@@ -929,7 +945,7 @@ class GitHubRestService(
         if (!res.status.isSuccess()) {
             throw GitHubApiException(res.status.value, "Failed to load workflows (${res.status.value})")
         }
-        return res.body<RestWorkflowsResponse>().workflows.map {
+        return res.bodyOrDefaultOnEmpty<RestWorkflowsResponse> { RestWorkflowsResponse() }.workflows.map {
             WorkflowSummary(id = it.id, name = it.name, path = it.path, state = it.state, htmlUrl = it.htmlUrl)
         }
     }
@@ -953,7 +969,7 @@ class GitHubRestService(
         if (!res.status.isSuccess()) {
             throw GitHubApiException(res.status.value, "Failed to load workflow runs (${res.status.value})")
         }
-        return res.body<RestWorkflowRunsResponse>().workflowRuns.map {
+        return res.bodyOrDefaultOnEmpty<RestWorkflowRunsResponse> { RestWorkflowRunsResponse() }.workflowRuns.map {
             WorkflowRunSummary(
                 id = it.id,
                 runNumber = it.runNumber,
@@ -980,7 +996,7 @@ class GitHubRestService(
         if (!res.status.isSuccess()) {
             throw GitHubApiException(res.status.value, "Failed to load jobs for run #$runId (${res.status.value})")
         }
-        return res.body<RestWorkflowJobsResponse>().jobs.map { job ->
+        return res.bodyOrDefaultOnEmpty<RestWorkflowJobsResponse> { RestWorkflowJobsResponse() }.jobs.map { job ->
             WorkflowJobSummary(
                 id = job.id,
                 name = job.name,
@@ -1055,7 +1071,7 @@ class GitHubRestService(
         if (!res.status.isSuccess()) {
             throw GitHubApiException(res.status.value, "Failed to load check runs (${res.status.value})")
         }
-        return res.body<RestCheckRunsResponse>().toCheckRunSummaries()
+        return res.bodyOrDefaultOnEmpty<RestCheckRunsResponse> { RestCheckRunsResponse() }.toCheckRunSummaries()
     }
 
     suspend fun fetchCheckRunsForCheckSuite(owner: String, repo: String, checkSuiteId: Long): List<CheckRunSummary> {
@@ -1065,7 +1081,7 @@ class GitHubRestService(
         if (!res.status.isSuccess()) {
             throw GitHubApiException(res.status.value, "Failed to load check suite runs (${res.status.value})")
         }
-        return res.body<RestCheckRunsResponse>().toCheckRunSummaries()
+        return res.bodyOrDefaultOnEmpty<RestCheckRunsResponse> { RestCheckRunsResponse() }.toCheckRunSummaries()
     }
 
     private fun RestCheckRunsResponse.toCheckRunSummaries(): List<CheckRunSummary> =
@@ -1089,7 +1105,7 @@ class GitHubRestService(
         if (!res.status.isSuccess()) {
             throw GitHubApiException(res.status.value, "Failed to load releases (${res.status.value})")
         }
-        return res.body<List<RestReleaseDto>>().map { it.toReleaseSummary() }
+        return res.bodyOrDefaultOnEmpty<List<RestReleaseDto>> { emptyList() }.map { it.toReleaseSummary() }
     }
 
     suspend fun createRelease(
@@ -1133,7 +1149,7 @@ class GitHubRestService(
         if (!res.status.isSuccess()) {
             throw GitHubApiException(res.status.value, "Failed to load Dependabot alerts (${res.status.value})")
         }
-        val items = res.body<JsonArray>()
+        val items = res.bodyOrDefaultOnEmpty<JsonArray> { JsonArray(emptyList()) }
         return items.mapNotNull { el ->
             val obj = el as? JsonObject ?: return@mapNotNull null
             val number = obj["number"]?.jsonPrimitive?.intOrNull ?: return@mapNotNull null
@@ -1170,7 +1186,7 @@ class GitHubRestService(
         if (!res.status.isSuccess()) {
             throw GitHubApiException(res.status.value, "Failed to load security advisories (${res.status.value})")
         }
-        val items = res.body<JsonArray>()
+        val items = res.bodyOrDefaultOnEmpty<JsonArray> { JsonArray(emptyList()) }
         return items.mapNotNull { el ->
             val obj = el as? JsonObject ?: return@mapNotNull null
             val ghsaId = obj["ghsa_id"]?.let { if (it is JsonNull) null else it.jsonPrimitive.contentOrNull }
@@ -1331,7 +1347,7 @@ class GitHubRestService(
         if (!res.status.isSuccess()) {
             throw GitHubApiException(res.status.value, "Failed to load branches (${res.status.value})")
         }
-        return res.body<List<BranchDto>>().map { BranchRef(name = it.name, sha = it.commit.sha) }
+        return res.bodyOrDefaultOnEmpty<List<BranchDto>> { emptyList() }.map { BranchRef(name = it.name, sha = it.commit.sha) }
     }
 
     suspend fun fetchDirectoryContents(
@@ -1353,7 +1369,7 @@ class GitHubRestService(
         if (!res.status.isSuccess()) {
             throw GitHubApiException(res.status.value, "Failed to list directory (${res.status.value})")
         }
-        return res.body<List<ContentItemDto>>()
+        return res.bodyOrDefaultOnEmpty<List<ContentItemDto>> { emptyList() }
             .map { item ->
                 TreeEntry(
                     path = item.path,
@@ -1489,7 +1505,7 @@ class GitHubRestService(
         if (!res.status.isSuccess()) {
             throw gistApiException(res.status.value, "load gists")
         }
-        return res.body<List<RestGistDto>>().map { it.toGistSummary() }
+        return res.bodyOrDefaultOnEmpty<List<RestGistDto>> { emptyList() }.map { it.toGistSummary() }
     }
 
     suspend fun fetchGistDetail(gistId: String): GistDetail {
@@ -1630,7 +1646,7 @@ class GitHubRestService(
             if (!ref.isNullOrBlank()) parameter("ref", ref)
         }
         if (!res.status.isSuccess()) return null
-        val dto = res.body<ContentItemDto>()
+        val dto = res.bodyOrDefaultOnEmpty<ContentItemDto?> { null } ?: return null
         return if (dto.content != null && dto.encoding == "base64") {
             runCatching { Base64.Mime.decode(dto.content).decodeToString() }.getOrNull()
         } else {
@@ -1661,7 +1677,7 @@ class GitHubRestService(
         if (!res.status.isSuccess()) {
             throw GitHubApiException(res.status.value, "Failed to load repositories (${res.status.value})")
         }
-        return res.body<List<RestRepoDto>>().map { it.toRepoSummary() }
+        return res.bodyOrDefaultOnEmpty<List<RestRepoDto>> { emptyList() }.map { it.toRepoSummary() }
     }
 
     suspend fun fetchStarredRepositoriesRest(perPage: Int = 40): List<RepoSummary> {
@@ -1673,7 +1689,7 @@ class GitHubRestService(
         if (!res.status.isSuccess()) {
             throw GitHubApiException(res.status.value, "Failed to load starred repositories (${res.status.value})")
         }
-        return res.body<List<RestRepoDto>>().map { it.toRepoSummary(viewerHasStarred = true) }
+        return res.bodyOrDefaultOnEmpty<List<RestRepoDto>> { emptyList() }.map { it.toRepoSummary(viewerHasStarred = true) }
     }
 
     suspend fun searchRepositoriesRest(query: String, perPage: Int = 30): List<RepoSummary> {
@@ -1686,7 +1702,7 @@ class GitHubRestService(
         if (!res.status.isSuccess()) {
             throw GitHubApiException(res.status.value, "Repository search failed (${res.status.value})")
         }
-        return res.body<RestRepoSearchResponse>().items.map { it.toRepoSummary() }
+        return res.bodyOrDefaultOnEmpty<RestRepoSearchResponse> { RestRepoSearchResponse() }.items.map { it.toRepoSummary() }
     }
 
     suspend fun fetchReceivedEvents(login: String, page: Int = 1, perPage: Int = 30): List<ActivityEvent> {
@@ -1697,7 +1713,7 @@ class GitHubRestService(
         if (!res.status.isSuccess()) {
             throw GitHubApiException(res.status.value, "Failed to load activity feed (${res.status.value})")
         }
-        return res.body<List<RestEventDto>>().map(::parseActivityEvent)
+        return res.bodyOrDefaultOnEmpty<List<RestEventDto>> { emptyList() }.map(::parseActivityEvent)
     }
 
     suspend fun fetchUserEvents(login: String, page: Int = 1, perPage: Int = 30): List<ActivityEvent> {
@@ -1708,7 +1724,7 @@ class GitHubRestService(
         if (!res.status.isSuccess()) {
             throw GitHubApiException(res.status.value, "Failed to load user events (${res.status.value})")
         }
-        return res.body<List<RestEventDto>>().map(::parseActivityEvent)
+        return res.bodyOrDefaultOnEmpty<List<RestEventDto>> { emptyList() }.map(::parseActivityEvent)
     }
 
     suspend fun fetchUserProfileRest(login: String): UserProfile {
@@ -1785,7 +1801,7 @@ class GitHubRestService(
         if (!res.status.isSuccess()) {
             throw GitHubApiException(res.status.value, "Failed to load repositories for @$login (${res.status.value})")
         }
-        return res.body<List<RestRepoDto>>().map { it.toRepoSummary() }
+        return res.bodyOrDefaultOnEmpty<List<RestRepoDto>> { emptyList() }.map { it.toRepoSummary() }
     }
 
     suspend fun fetchUserStarredRepositories(login: String, perPage: Int = 30): List<RepoSummary> {
@@ -1796,7 +1812,7 @@ class GitHubRestService(
         if (!res.status.isSuccess()) {
             throw GitHubApiException(res.status.value, "Failed to load starred repos for @$login (${res.status.value})")
         }
-        return res.body<List<RestRepoDto>>().map { it.toRepoSummary() }
+        return res.bodyOrDefaultOnEmpty<List<RestRepoDto>> { emptyList() }.map { it.toRepoSummary() }
     }
 
     suspend fun fetchUserOrganizations(login: String): List<OrganizationSummary> {
@@ -1807,7 +1823,7 @@ class GitHubRestService(
         if (!res.status.isSuccess()) {
             throw GitHubApiException(res.status.value, "Failed to load organizations (${res.status.value})")
         }
-        return res.body<List<RestOrgDto>>().map {
+        return res.bodyOrDefaultOnEmpty<List<RestOrgDto>> { emptyList() }.map {
             OrganizationSummary(login = it.login, avatarUrl = it.avatarUrl, description = it.description)
         }
     }
@@ -1820,7 +1836,7 @@ class GitHubRestService(
         if (!res.status.isSuccess()) {
             throw GitHubApiException(res.status.value, "Failed to load followers (${res.status.value})")
         }
-        return res.body<List<RestUserFollowItemDto>>().map {
+        return res.bodyOrDefaultOnEmpty<List<RestUserFollowItemDto>> { emptyList() }.map {
             UserSummary(login = it.login, avatarUrl = it.avatarUrl, htmlUrl = it.htmlUrl)
         }
     }
@@ -1833,7 +1849,7 @@ class GitHubRestService(
         if (!res.status.isSuccess()) {
             throw GitHubApiException(res.status.value, "Failed to load following (${res.status.value})")
         }
-        return res.body<List<RestUserFollowItemDto>>().map {
+        return res.bodyOrDefaultOnEmpty<List<RestUserFollowItemDto>> { emptyList() }.map {
             UserSummary(login = it.login, avatarUrl = it.avatarUrl, htmlUrl = it.htmlUrl)
         }
     }
@@ -1848,7 +1864,7 @@ class GitHubRestService(
         if (!res.status.isSuccess()) {
             throw GitHubApiException(res.status.value, "Issue search failed (${res.status.value})")
         }
-        return res.body<RestIssueSearchResponse>().items.map { item ->
+        return res.bodyOrDefaultOnEmpty<RestIssueSearchResponse> { RestIssueSearchResponse() }.items.map { item ->
             val repoParts = item.repositoryUrl.removePrefix("$baseUrl/repos/").split('/')
             val repoOwner = repoParts.getOrNull(0).orEmpty()
             val repoName = repoParts.getOrNull(1).orEmpty()
@@ -1884,7 +1900,7 @@ class GitHubRestService(
         if (!res.status.isSuccess()) {
             throw GitHubApiException(res.status.value, "Code search failed (${res.status.value})")
         }
-        return res.body<RestCodeSearchResponse>().items.map { item ->
+        return res.bodyOrDefaultOnEmpty<RestCodeSearchResponse> { RestCodeSearchResponse() }.items.map { item ->
             val full = item.repository.fullName
             val owner = item.repository.owner?.login ?: full.substringBefore('/', "")
             val name = item.repository.name.ifBlank { full.substringAfter('/', "") }
@@ -1909,7 +1925,7 @@ class GitHubRestService(
         if (!res.status.isSuccess()) {
             throw GitHubApiException(res.status.value, "User search failed (${res.status.value})")
         }
-        return res.body<RestUserSearchResponse>().items.map {
+        return res.bodyOrDefaultOnEmpty<RestUserSearchResponse> { RestUserSearchResponse() }.items.map {
             UserSummary(login = it.login, avatarUrl = it.avatarUrl, htmlUrl = it.htmlUrl)
         }
     }
@@ -1978,7 +1994,7 @@ class GitHubRestService(
         if (!res.status.isSuccess()) {
             throw GitHubApiException(res.status.value, "Failed to load stargazers (${res.status.value})")
         }
-        return res.body<List<RestUserFollowItemDto>>().map {
+        return res.bodyOrDefaultOnEmpty<List<RestUserFollowItemDto>> { emptyList() }.map {
             UserSummary(login = it.login, avatarUrl = it.avatarUrl, htmlUrl = it.htmlUrl)
         }
     }
@@ -2003,7 +2019,7 @@ class GitHubRestService(
         if (!res.status.isSuccess()) {
             throw GitHubApiException(res.status.value, "Failed to load forks (${res.status.value})")
         }
-        return res.body<List<RestRepoDto>>().map { it.toRepoSummary() }
+        return res.bodyOrDefaultOnEmpty<List<RestRepoDto>> { emptyList() }.map { it.toRepoSummary() }
     }
 
     suspend fun fetchRepoContributors(owner: String, repo: String, perPage: Int = 30): List<UserSummary> {
@@ -2014,7 +2030,7 @@ class GitHubRestService(
         if (!res.status.isSuccess()) {
             throw GitHubApiException(res.status.value, "Failed to load contributors (${res.status.value})")
         }
-        return res.body<List<RestUserFollowItemDto>>().map {
+        return res.bodyOrDefaultOnEmpty<List<RestUserFollowItemDto>> { emptyList() }.map {
             UserSummary(login = it.login, avatarUrl = it.avatarUrl, htmlUrl = it.htmlUrl)
         }
     }
@@ -2025,7 +2041,7 @@ class GitHubRestService(
         if (!res.status.isSuccess()) {
             throw GitHubApiException(res.status.value, "Failed to load languages (${res.status.value})")
         }
-        return res.body<Map<String, Long>>()
+        return res.bodyOrDefaultOnEmpty<Map<String, Long>> { emptyMap() }
     }
 
     /**
@@ -2040,7 +2056,7 @@ class GitHubRestService(
         if (!res.status.isSuccess()) {
             throw GitHubApiException(res.status.value, "Failed to load commit activity (${res.status.value})")
         }
-        val list = res.body<List<RestCommitActivityDto>>().map {
+        val list = res.bodyOrDefaultOnEmpty<List<RestCommitActivityDto>> { emptyList() }.map {
             WeeklyCommitActivity(weekEpochSeconds = it.week, total = it.total, days = it.days)
         }
         return list to false
@@ -2058,7 +2074,7 @@ class GitHubRestService(
         if (!res.status.isSuccess()) {
             throw GitHubApiException(res.status.value, "Failed to load contributor stats (${res.status.value})")
         }
-        val stats = res.body<List<RestContributorStatsDto>>()
+        val stats = res.bodyOrDefaultOnEmpty<List<RestContributorStatsDto>> { emptyList() }
             .mapNotNull { dto ->
                 val author = dto.author ?: return@mapNotNull null
                 if (author.login.isBlank()) return@mapNotNull null
@@ -2120,7 +2136,7 @@ class GitHubRestService(
         if (!res.status.isSuccess()) {
             throw GitHubApiException(res.status.value, "Failed to load labels (${res.status.value})")
         }
-        return res.body<List<RestSearchLabelDto>>().map {
+        return res.bodyOrDefaultOnEmpty<List<RestSearchLabelDto>> { emptyList() }.map {
             LabelTag(name = it.name, colorHex = it.color, description = it.description)
         }
     }
@@ -2152,7 +2168,7 @@ class GitHubRestService(
         if (!res.status.isSuccess()) {
             throw GitHubApiException(res.status.value, "Failed to load milestones (${res.status.value})")
         }
-        return res.body<List<RestMilestoneDto>>().map {
+        return res.bodyOrDefaultOnEmpty<List<RestMilestoneDto>> { emptyList() }.map {
             MilestoneSummary(
                 number = it.number,
                 title = it.title,
@@ -2172,7 +2188,7 @@ class GitHubRestService(
         if (!res.status.isSuccess()) {
             throw GitHubApiException(res.status.value, "Failed to load assignees (${res.status.value})")
         }
-        return res.body<List<RestUserFollowItemDto>>().map {
+        return res.bodyOrDefaultOnEmpty<List<RestUserFollowItemDto>> { emptyList() }.map {
             UserSummary(login = it.login, avatarUrl = it.avatarUrl, htmlUrl = it.htmlUrl)
         }
     }

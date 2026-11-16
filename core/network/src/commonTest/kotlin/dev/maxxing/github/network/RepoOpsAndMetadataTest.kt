@@ -428,4 +428,61 @@ class RepoOpsAndMetadataTest {
         assertEquals("upstream/app", newestForks.single().parent?.fullName)
         assertEquals("dev", newestForks.single().defaultBranch)
     }
+
+    @Test
+    fun `204 No Content and empty response bodies resolve to empty collections or null`() = runTest {
+        val engine = MockEngine { request ->
+            when (request.url.encodedPath) {
+                // Simulate 200 OK with empty body for one endpoint too
+                "/repos/octo/empty/releases" -> respond(
+                    content = "",
+                    status = HttpStatusCode.OK
+                )
+                else -> respond(
+                    content = "",
+                    status = HttpStatusCode.NoContent
+                )
+            }
+        }
+
+        val http = createClient(engine)
+        val rest = GitHubRestService(http)
+
+        assertTrue(rest.fetchRepoContributors("octo", "empty").isEmpty())
+        assertTrue(rest.fetchRepoStargazers("octo", "empty").isEmpty())
+        assertTrue(rest.fetchRepoForks("octo", "empty").isEmpty())
+        assertTrue(rest.fetchRepoLanguages("octo", "empty").isEmpty())
+        assertTrue(rest.fetchRepoCommits("octo", "empty").isEmpty())
+        assertTrue(rest.fetchBranches("octo", "empty").isEmpty())
+        assertTrue(rest.fetchRepoTags("octo", "empty").isEmpty())
+        assertTrue(rest.fetchDirectoryContents("octo", "empty").isEmpty())
+        assertNull(rest.fetchReadme("octo", "empty"))
+        assertTrue(rest.fetchReleases("octo", "empty").isEmpty())
+        assertTrue(rest.fetchPullFiles("octo", "empty", 1).isEmpty())
+        assertTrue(rest.fetchWorkflows("octo", "empty").isEmpty())
+        assertTrue(rest.fetchWorkflowRuns("octo", "empty").isEmpty())
+        assertTrue(rest.fetchWorkflowRunJobs("octo", "empty", 10L).isEmpty())
+        assertTrue(rest.fetchCheckRunsForRef("octo", "empty", "main").isEmpty())
+        assertTrue(rest.fetchCheckRunsForCheckSuite("octo", "empty", 99L).isEmpty())
+        assertTrue(rest.fetchDependabotAlerts("octo", "empty").isEmpty())
+        assertTrue(rest.fetchSecurityAdvisories("octo", "empty").isEmpty())
+        assertTrue(rest.fetchRepoLabels("octo", "empty").isEmpty())
+        assertTrue(rest.fetchRepoMilestones("octo", "empty").isEmpty())
+        assertTrue(rest.fetchRepoAssignees("octo", "empty").isEmpty())
+        assertTrue(rest.fetchNotifications().isEmpty())
+        assertTrue(rest.fetchGists().isEmpty())
+        assertTrue(rest.fetchViewerRepositoriesRest().isEmpty())
+        assertTrue(rest.fetchStarredRepositoriesRest().isEmpty())
+        assertTrue(rest.fetchUserRepositories("octo").isEmpty())
+        assertTrue(rest.fetchUserStarredRepositories("octo").isEmpty())
+        assertTrue(rest.fetchUserOrganizations("octo").isEmpty())
+        assertTrue(rest.fetchUserFollowers("octo").isEmpty())
+        assertTrue(rest.fetchUserFollowing("octo").isEmpty())
+        assertTrue(rest.fetchReceivedEvents("octo").isEmpty())
+        assertTrue(rest.fetchUserEvents("octo").isEmpty())
+        assertTrue(rest.searchRepositoriesRest("kmp").isEmpty())
+        assertTrue(rest.searchIssuesAndPullsRest("bug").isEmpty())
+        assertTrue(rest.searchCodeRest("remember").isEmpty())
+        assertTrue(rest.searchUsersRest("octo").isEmpty())
+    }
 }
