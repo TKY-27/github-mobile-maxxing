@@ -47,6 +47,47 @@ class RepoFileEditorTest {
     private val jsonHeaders = headersOf(HttpHeaders.ContentType, "application/json")
     private val jsonCodec = Json { ignoreUnknownKeys = true; isLenient = true; explicitNulls = false }
 
+    @Test
+    fun fileMutationsEncodePathsLikeReads() = runTest {
+        val paths = listOf(
+            "docs/issue #42?.md" to "docs/issue%20%2342%3F.md",
+            "docs/literal%2Fname.md" to "docs/literal%252Fname.md",
+            "docs/日本語.md" to "docs/%E6%97%A5%E6%9C%AC%E8%AA%9E.md"
+        )
+        for ((path, encodedPath) in paths) {
+            val methods = mutableListOf<HttpMethod>()
+            val engine = MockEngine { request ->
+                methods += request.method
+                assertEquals("/repos/octo/app/contents/$encodedPath", request.url.encodedPath)
+                assertEquals("", request.url.fragment)
+                if (request.method == HttpMethod.Get) {
+                    assertEquals(setOf("ref"), request.url.parameters.names())
+                    assertEquals("feature/edit", request.url.parameters["ref"])
+                    respond(
+                        """{"name":"${path.substringAfterLast('/')}","path":"$path","sha":"blob-sha","type":"file","encoding":"base64","content":""}""",
+                        headers = jsonHeaders
+                    )
+                } else {
+                    assertTrue(request.url.parameters.isEmpty())
+                    respond("""{"commit":{"sha":"commit-sha"}}""", headers = jsonHeaders)
+                }
+            }
+            val client = HttpClient(engine) {
+                install(ContentNegotiation) { json(jsonCodec) }
+            }
+            try {
+                val rest = GitHubRestService(client)
+                val file = rest.fetchFileContent("octo", "app", path, ref = "feature/edit")
+                rest.upsertRepoFile("octo", "app", path, "created", "", branch = "feature/edit")
+                rest.upsertRepoFile("octo", "app", path, "updated", "", branch = "feature/edit", existingSha = file.sha)
+                rest.deleteRepoFile("octo", "app", path, file.sha, "", branch = "feature/edit")
+                assertEquals(listOf(HttpMethod.Get, HttpMethod.Put, HttpMethod.Put, HttpMethod.Delete), methods)
+            } finally {
+                client.close()
+            }
+        }
+    }
+
     @OptIn(ExperimentalEncodingApi::class)
     @Test
     fun fileContentIncludesShaAndUpsertDeleteCommitAndInvalidateCaches() = runTest {
