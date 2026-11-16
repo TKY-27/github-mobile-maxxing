@@ -40,10 +40,6 @@ import coil3.memory.MemoryCache
 import coil3.network.ktor3.KtorNetworkFetcherFactory
 import coil3.request.crossfade
 import coil3.svg.SvgDecoder
-import io.ktor.client.HttpClient
-import io.ktor.client.plugins.HttpSend
-import io.ktor.client.plugins.plugin
-import io.ktor.http.HttpHeaders
 import com.composables.icons.lucide.FolderGit2
 import com.composables.icons.lucide.GitPullRequest
 import com.composables.icons.lucide.House
@@ -63,6 +59,7 @@ import dev.maxxing.github.app.ui.SignInScreen
 import dev.maxxing.github.app.ui.UserProfileScreen
 import dev.maxxing.github.model.AppBranding
 import dev.maxxing.github.model.RepoSummary
+import dev.maxxing.github.network.createGitHubImageHttpClient
 import dev.maxxing.github.ui.components.MaxxingLoadingState
 import dev.maxxing.github.ui.components.MaxxingPredictiveBackContainer
 import dev.maxxing.github.ui.components.MaxxingPredictiveOverlayHost
@@ -92,24 +89,8 @@ fun GitHubMaxxingApp(
     val container = remember { AppContainer() }
 
     setSingletonImageLoaderFactory { context ->
-        val imageHttpClient = HttpClient {
-            followRedirects = true
-        }.apply {
-            plugin(HttpSend).intercept { request ->
-                request.headers.append(HttpHeaders.UserAgent, AppBranding.USER_AGENT)
-                val host = request.url.host.lowercase()
-                val isGitHubOwned = host == "raw.githubusercontent.com" ||
-                    host == "github.com" ||
-                    host == "api.github.com"
-                if (isGitHubOwned) {
-                    container.sessionManager.session.value?.accessToken?.let { token ->
-                        if (!request.headers.contains(HttpHeaders.Authorization)) {
-                            request.headers.append(HttpHeaders.Authorization, "Bearer $token")
-                        }
-                    }
-                }
-                execute(request)
-            }
+        val imageHttpClient = createGitHubImageHttpClient {
+            container.sessionManager.session.value?.accessToken
         }
         ImageLoader.Builder(context)
             .components {
