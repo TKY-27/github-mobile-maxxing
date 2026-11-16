@@ -1425,7 +1425,7 @@ class GitHubRestService(
         val cleanPath = path.trim().trimStart('/')
         require(cleanPath.isNotEmpty()) { "File path cannot be blank" }
         val encoded = Base64.Default.encode(content.encodeToByteArray())
-        val res = httpClient.put("$baseUrl/repos/$owner/$repo/contents/$cleanPath") {
+        val res = httpClient.put("${repoPath(owner, repo)}/contents/${encodeRepoSubPath(cleanPath)}") {
             contentType(ContentType.Application.Json)
             setBody(
                 UpsertFileContentRequest(
@@ -1455,7 +1455,7 @@ class GitHubRestService(
         val cleanPath = path.trim().trimStart('/')
         require(cleanPath.isNotEmpty()) { "File path cannot be blank" }
         require(sha.isNotBlank()) { "Existing file SHA is required to delete" }
-        val res = httpClient.delete("$baseUrl/repos/$owner/$repo/contents/$cleanPath") {
+        val res = httpClient.delete("${repoPath(owner, repo)}/contents/${encodeRepoSubPath(cleanPath)}") {
             contentType(ContentType.Application.Json)
             setBody(
                 DeleteFileContentRequest(
