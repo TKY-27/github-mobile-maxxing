@@ -115,11 +115,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           HEAD_SHA="$(git rev-parse HEAD)"
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -fa nightly -m "Nightly build from main (${SHORT_SHA})" "$HEAD_SHA"
-          git push origin refs/tags/nightly --force
-
           COMMIT_MSG="$(git log -1 --pretty=%s)"
           CHECKSUMS="$(cat nightly-checksums.txt)"
           {
@@ -128,20 +123,19 @@ jobs:
             printf -- '- **Latest commit**: %s\n\n' "$COMMIT_MSG"
             printf '### SHA-256 Checksums\n```\n%s\n```\n' "$CHECKSUMS"
           } > nightly-notes.md
+
           if gh release view nightly >/dev/null 2>&1; then
-            gh release upload nightly \
-              github-mobile-maxxing-nightly.apk \
-              github-mobile-maxxing-nightly-x86_64.AppImage \
-              --clobber
-            gh release edit nightly \
-              --prerelease \
-              --title "Nightly (${BUILD_DATE} · ${SHORT_SHA})" \
-              --notes-file nightly-notes.md
-          else
-            gh release create nightly \
-              github-mobile-maxxing-nightly.apk \
-              github-mobile-maxxing-nightly-x86_64.AppImage \
-              --prerelease \
-              --title "Nightly (${BUILD_DATE} · ${SHORT_SHA})" \
-              --notes-file nightly-notes.md
+            gh release delete nightly --yes
           fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -fa nightly -m "Nightly build from main (${SHORT_SHA})" "$HEAD_SHA"
+          git push origin refs/tags/nightly --force
+
+          gh release create nightly \
+            github-mobile-maxxing-nightly.apk \
+            github-mobile-maxxing-nightly-x86_64.AppImage \
+            --prerelease \
+            --title "github-mobile-maxxing v${ANDROID_VERSION_NAME}" \
+            --notes-file nightly-notes.md
