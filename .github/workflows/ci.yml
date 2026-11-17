@@ -45,6 +45,7 @@ jobs:
             :core:ui:desktopTest \
             :core:network:desktopTest \
             :composeApp:desktopTest \
+            :composeApp:testAndroidHostTest \
             :composeApp:desktopMainClasses \
             --no-daemon
 

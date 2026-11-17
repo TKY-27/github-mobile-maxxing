@@ -47,6 +47,7 @@ jobs:
             :core:ui:desktopTest \
             :core:network:desktopTest \
             :composeApp:desktopTest \
+            :composeApp:testAndroidHostTest \
             --no-daemon
 
       - name: Decode Android release keystore

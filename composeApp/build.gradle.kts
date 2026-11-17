@@ -75,6 +75,8 @@ kotlin {
         androidResources {
             enable = true
         }
+        // JVM tests for the Context-free font helpers in androidMain.
+        withHostTest {}
     }
 
     jvm("desktop") {
@@ -97,6 +99,7 @@ kotlin {
             }
         }
         androidMain.dependencies {
+            implementation(libs.androidx.activity.compose)
             implementation(libs.kotlinx.coroutines.android)
             implementation(libs.androidx.core.ktx)
             implementation(libs.androidx.work.runtime)
@@ -109,6 +112,12 @@ kotlin {
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)
+        }
+        val androidHostTest by getting {
+            dependencies {
+                implementation(libs.kotlin.test)
+                implementation(libs.kxml2)
+            }
         }
     }
 }

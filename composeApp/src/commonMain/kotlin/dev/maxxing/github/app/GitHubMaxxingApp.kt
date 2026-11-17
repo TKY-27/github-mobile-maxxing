@@ -26,6 +26,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -46,6 +47,7 @@ import com.composables.icons.lucide.House
 import com.composables.icons.lucide.Inbox
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.Settings
+import dev.maxxing.github.app.fonts.ProvideAppTypographyFont
 import dev.maxxing.github.app.notifications.PlatformNotifier
 import dev.maxxing.github.app.ui.GistsScreen
 import dev.maxxing.github.app.ui.HomeScreen
@@ -164,36 +166,42 @@ fun GitHubMaxxingApp(
         onDarkThemeChanged(resolvedDarkTheme)
     }
 
-    MaxxingTheme(
-        seedColorHex = themePrefs.seedColorHex,
-        useDynamicColor = themePrefs.useDynamicColor,
-        darkThemeOverride = themePrefs.darkModeOverride
-    ) {
-        when {
-            !isInitialized -> {
-                Surface(
-                    color = MaterialTheme.colorScheme.surface,
-                    modifier = Modifier.fillMaxSize()
-                ) {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        MaxxingLoadingState(message = "Starting ${AppBranding.APP_NAME}...")
+    ProvideAppTypographyFont(
+        primary = themePrefs.primaryFont,
+        fallback = themePrefs.fallbackFont
+    ) { fontFamilyOverride ->
+        MaxxingTheme(
+            seedColorHex = themePrefs.seedColorHex,
+            useDynamicColor = themePrefs.useDynamicColor,
+            darkThemeOverride = themePrefs.darkModeOverride,
+            fontFamilyOverride = fontFamilyOverride
+        ) {
+            when {
+                !isInitialized -> {
+                    Surface(
+                        color = MaterialTheme.colorScheme.surface,
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            MaxxingLoadingState(message = "Starting ${AppBranding.APP_NAME}...")
+                        }
                     }
                 }
-            }
 
-            session == null -> {
-                SignInScreen(
-                    sessionManager = container.sessionManager,
-                    onSignedIn = { /* session StateFlow transitions automatically */ }
-                )
-            }
+                session == null -> {
+                    SignInScreen(
+                        sessionManager = container.sessionManager,
+                        onSignedIn = { /* session StateFlow transitions automatically */ }
+                    )
+                }
 
-            else -> {
-                MainAuthenticatedShell(
-                    container = container,
-                    deepLinkUrl = deepLinkUrl,
-                    onConsumeDeepLink = onConsumeDeepLink
-                )
+                else -> {
+                    MainAuthenticatedShell(
+                        container = container,
+                        deepLinkUrl = deepLinkUrl,
+                        onConsumeDeepLink = onConsumeDeepLink
+                    )
+                }
             }
         }
     }
@@ -205,7 +213,7 @@ private fun MainAuthenticatedShell(
     deepLinkUrl: String?,
     onConsumeDeepLink: () -> Unit
 ) {
-    var navState by remember { mutableStateOf(ShellNavState()) }
+    var navState by rememberSaveable(stateSaver = ShellNavStateSaver) { mutableStateOf(ShellNavState()) }
     var notificationDeepLinkTarget by remember { mutableStateOf<IssuePullTarget?>(null) }
     val unreadCount by container.unreadNotificationCount.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
