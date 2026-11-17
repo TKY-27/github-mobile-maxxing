@@ -152,6 +152,26 @@ actual fun createPlatformTokenStore(): TokenStore =
 
 private const val OFFICIAL_GITHUB_PACKAGE = "com.github.android"
 
+private fun resolveExternalBrowserPackage(pm: PackageManager, selfPackage: String): String? {
+    val genericHttpsIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://example.com")).apply {
+        addCategory(Intent.CATEGORY_BROWSABLE)
+    }
+    val defaultBrowser = pm.resolveActivity(genericHttpsIntent, PackageManager.MATCH_DEFAULT_ONLY)
+        ?.activityInfo?.packageName
+        ?.takeIf { it != selfPackage && it != OFFICIAL_GITHUB_PACKAGE && it != "android" }
+    if (defaultBrowser != null) return defaultBrowser
+
+    val browsableCandidates = pm.queryIntentActivities(genericHttpsIntent, PackageManager.MATCH_DEFAULT_ONLY)
+        .mapNotNull { it.activityInfo?.packageName }
+        .firstOrNull { it != selfPackage && it != OFFICIAL_GITHUB_PACKAGE && it != "android" }
+    if (browsableCandidates != null) return browsableCandidates
+
+    val appBrowserIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_APP_BROWSER)
+    return pm.queryIntentActivities(appBrowserIntent, PackageManager.MATCH_DEFAULT_ONLY)
+        .mapNotNull { it.activityInfo?.packageName }
+        .firstOrNull { it != selfPackage && it != OFFICIAL_GITHUB_PACKAGE && it != "android" }
+}
+
 actual fun openUrlInBrowser(url: String): Boolean {
     return try {
         val context = AndroidAuthContextHolder.requireContext()
@@ -162,17 +182,15 @@ actual fun openUrlInBrowser(url: String): Boolean {
         }
         val pm = context.packageManager
         val resolvedPkg = pm.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY)?.activityInfo?.packageName
-        if (resolvedPkg == context.packageName) {
-            // Avoid looping back into this app when the user enabled github.com links for github-mobile-maxxing.
-            val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://example.com")).apply {
-                addCategory(Intent.CATEGORY_BROWSABLE)
-            }
-            val externalBrowser = pm.queryIntentActivities(browserIntent, PackageManager.MATCH_DEFAULT_ONLY)
-                .firstOrNull { it.activityInfo?.packageName != null && it.activityInfo.packageName != context.packageName }
-                ?.activityInfo?.packageName
+        if (resolvedPkg == null ||
+            resolvedPkg == context.packageName ||
+            resolvedPkg == OFFICIAL_GITHUB_PACKAGE ||
+            resolvedPkg == "android"
+        ) {
+            val externalBrowser = resolveExternalBrowserPackage(pm, context.packageName)
             if (externalBrowser != null) {
                 intent.setPackage(externalBrowser)
-            } else {
+            } else if (resolvedPkg == context.packageName) {
                 return false
             }
         }
