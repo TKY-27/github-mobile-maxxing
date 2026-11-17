@@ -190,3 +190,5 @@ actual fun openUrlInBrowser(url: String): Boolean {
 
     return false
 }
+
+actual fun shareText(text: String, title: String?): Boolean = false

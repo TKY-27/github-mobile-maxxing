@@ -82,6 +82,19 @@ fun resolveRepoCapabilities(
     )
 }
 
+/** Resolves the canonical GitHub web URL for a repository from its owner and name. */
+fun resolveRepoWebUrl(owner: String, repo: String): String {
+    val cleanOwner = owner.trim().trim('/')
+    val cleanRepo = repo.trim().trim('/').substringAfterLast('/')
+    return if (cleanOwner.isNotBlank() && cleanRepo.isNotBlank()) {
+        "https://github.com/$cleanOwner/$cleanRepo"
+    } else {
+        "https://github.com"
+    }
+}
+
+fun RepoSummary.webUrl(): String = resolveRepoWebUrl(owner, name)
+
 @Serializable
 data class RepoDetail(
     val summary: RepoSummary,

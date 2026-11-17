@@ -613,9 +613,10 @@ class GitHubRepository(
         owner: String,
         repo: String,
         title: String,
-        body: String
+        body: String,
+        labels: List<String> = emptyList()
     ): Result<Int> = runCatching {
-        restService.createIssue(owner, repo, title, body)
+        restService.createIssue(owner, repo, title, body, labels)
     }.onSuccess {
         myIssuesCache.clear()
         repoIssuesCache.invalidateWhere { it.owner == owner && it.repo == repo && !it.pullRequests }

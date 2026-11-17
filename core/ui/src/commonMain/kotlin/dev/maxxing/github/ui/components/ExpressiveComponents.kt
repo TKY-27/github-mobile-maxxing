@@ -4,6 +4,7 @@ import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,15 +17,20 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ButtonGroupDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ContainedLoadingIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.FloatingToolbarDefaults
 import androidx.compose.material3.HorizontalFloatingToolbar
 import androidx.compose.material3.Icon
@@ -32,10 +38,12 @@ import androidx.compose.material3.LinearWavyProgressIndicator
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SplitButtonDefaults
 import androidx.compose.material3.SplitButtonLayout
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.ToggleButton
 import androidx.compose.material3.ToggleButtonDefaults
 import androidx.compose.runtime.Composable
@@ -65,9 +73,11 @@ import coil3.request.crossfade
 import com.composables.icons.lucide.Check
 import com.composables.icons.lucide.ChevronDown
 import com.composables.icons.lucide.Lucide
+import com.composables.icons.lucide.Plus
 import com.composables.icons.lucide.Star
 import com.composables.icons.lucide.UserCheck
 import com.composables.icons.lucide.UserPlus
+import dev.maxxing.github.model.LabelTag
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -556,4 +566,94 @@ object MaxxingTopHeaderDefaults {
     val CollapsedVerticalPadding = 6.dp
     val TitleRowMinHeight = 48.dp
     val TabBarTopSpacing = 10.dp
+}
+
+/**
+ * Multi-select label picker dialog shared between new issue authoring and existing issue/PR management.
+ */
+@Composable
+fun RepoLabelsPickerDialog(
+    title: String,
+    availableLabels: List<LabelTag>,
+    selectedLabelNames: Set<String>,
+    onToggleLabel: (String, Boolean) -> Unit,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+    confirmLabel: String = "Save",
+    isLoading: Boolean = false,
+    isBusy: Boolean = false,
+    canCreateLabel: Boolean = true,
+    newLabelName: String = "",
+    onNewLabelNameChange: (String) -> Unit = {},
+    onCreateLabel: ((String) -> Unit)? = null
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(
+                    modifier = Modifier.fillMaxWidth().height(210.dp).verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    if (isLoading && availableLabels.isEmpty()) {
+                        MaxxingLoadingState(message = "Loading labels...")
+                    } else if (availableLabels.isEmpty()) {
+                        Text(
+                            "No labels found in repository.",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    availableLabels.forEach { label ->
+                        val checked = label.name in selectedLabelNames
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onToggleLabel(label.name, !checked) }
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Checkbox(
+                                checked = checked,
+                                onCheckedChange = { isChecked -> onToggleLabel(label.name, isChecked) }
+                            )
+                            GitHubLabelChip(name = label.name, colorHex = label.colorHex)
+                        }
+                    }
+                }
+
+                if (canCreateLabel && onCreateLabel != null) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = newLabelName,
+                            onValueChange = onNewLabelNameChange,
+                            label = { Text("New label") },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f)
+                        )
+                        FilledTonalIconButton(
+                            enabled = newLabelName.isNotBlank() && !isBusy,
+                            onClick = { onCreateLabel(newLabelName.trim()) }
+                        ) {
+                            Icon(Lucide.Plus, contentDescription = "Create label")
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                enabled = !isBusy,
+                onClick = onConfirm
+            ) {
+                Text(confirmLabel)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
 }

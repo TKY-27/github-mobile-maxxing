@@ -36,3 +36,6 @@ interface TokenStore {
 expect fun createPlatformTokenStore(): TokenStore
 
 expect fun openUrlInBrowser(url: String): Boolean
+
+/** Opens a platform-native share sheet when available; returns false if the caller should fall back to clipboard copy. */
+expect fun shareText(text: String, title: String? = null): Boolean

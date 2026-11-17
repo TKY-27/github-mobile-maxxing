@@ -485,4 +485,58 @@ class RepoOpsAndMetadataTest {
         assertTrue(rest.searchCodeRest("remember").isEmpty())
         assertTrue(rest.searchUsersRest("octo").isEmpty())
     }
+
+    @Test
+    fun `createIssue includes deduplicated labels when provided and omits labels when empty`() = runTest {
+        val postedPayloads = mutableListOf<String>()
+        val engine = MockEngine { request ->
+            val path = request.url.encodedPath
+            when {
+                path == "/repos/octo/app/issues" && request.method == HttpMethod.Post -> {
+                    postedPayloads += (request.body as TextContent).text
+                    val nextNum = 100 + postedPayloads.size
+                    respond(
+                        content = """{"number":$nextNum}""",
+                        status = HttpStatusCode.Created,
+                        headers = headersOf(HttpHeaders.ContentType, "application/json")
+                    )
+                }
+
+                else -> error("Unexpected request: ${request.method} $path")
+            }
+        }
+
+        val http = createClient(engine)
+        val sm = SessionManager(RepoOpsTokenStore(), DeviceFlowClient(http, "cid"))
+        sm.initialize()
+        val repo = GitHubRepository(sm, httpClient = http)
+
+        val numWithLabels = repo.createIssue(
+            owner = "octo",
+            repo = "app",
+            title = "Labeled bug",
+            body = "Details",
+            labels = listOf("bug", " enhancement ", "bug", "")
+        ).getOrThrow()
+        assertEquals(101, numWithLabels)
+
+        val firstObj = json.parseToJsonElement(postedPayloads[0]).jsonObject
+        assertEquals("Labeled bug", firstObj["title"]?.jsonPrimitive?.content)
+        assertEquals("Details", firstObj["body"]?.jsonPrimitive?.content)
+        assertEquals(
+            listOf("bug", "enhancement"),
+            firstObj["labels"]?.jsonArray?.map { it.jsonPrimitive.content }
+        )
+
+        val numWithoutLabels = repo.createIssue(
+            owner = "octo",
+            repo = "app",
+            title = "Plain issue",
+            body = "Body"
+        ).getOrThrow()
+        assertEquals(102, numWithoutLabels)
+
+        val secondObj = json.parseToJsonElement(postedPayloads[1]).jsonObject
+        assertNull(secondObj["labels"])
+    }
 }

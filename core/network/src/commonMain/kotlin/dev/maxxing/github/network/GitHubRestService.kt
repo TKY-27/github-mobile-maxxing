@@ -150,9 +150,6 @@ private data class CommentRequest(val body: String)
 private data class IssueStateRequest(val state: String)
 
 @Serializable
-private data class CreateIssueRequest(val title: String, val body: String)
-
-@Serializable
 private data class CreateIssueResponse(val number: Int)
 
 @Serializable
@@ -1222,10 +1219,24 @@ class GitHubRestService(
         }
     }
 
-    suspend fun createIssue(owner: String, repo: String, title: String, body: String): Int {
+    suspend fun createIssue(
+        owner: String,
+        repo: String,
+        title: String,
+        body: String,
+        labels: List<String> = emptyList()
+    ): Int {
+        val cleanLabels = labels.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+        val payload = buildJsonObject {
+            put("title", title)
+            put("body", body)
+            if (cleanLabels.isNotEmpty()) {
+                put("labels", JsonArray(cleanLabels.map { JsonPrimitive(it) }))
+            }
+        }
         val res = httpClient.post("$baseUrl/repos/$owner/$repo/issues") {
             contentType(ContentType.Application.Json)
-            setBody(CreateIssueRequest(title, body))
+            setBody(payload)
         }
         if (!res.status.isSuccess()) {
             throw GitHubApiException(res.status.value, "Failed to create issue (${res.status.value})")

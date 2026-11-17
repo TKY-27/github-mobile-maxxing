@@ -3,6 +3,8 @@ package dev.maxxing.github.network
 import dev.maxxing.github.model.RepoDetail
 import dev.maxxing.github.model.RepoSummary
 import dev.maxxing.github.model.resolveRepoCapabilities
+import dev.maxxing.github.model.resolveRepoWebUrl
+import dev.maxxing.github.model.webUrl
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
@@ -191,5 +193,18 @@ class RepoPermissionsGatingTest {
         assertTrue(restRepos[0].isArchived)
         assertNull(restRepos[1].viewerPermission)
         assertFalse(restRepos[1].hasKnownPermission)
+    }
+
+    @Test
+    fun `resolveRepoWebUrl and RepoSummary webUrl build canonical github urls`() {
+        assertEquals(
+            "https://github.com/neutron42-jp/github-mobile-maxxing",
+            resolveRepoWebUrl("neutron42-jp", "github-mobile-maxxing")
+        )
+        assertEquals(
+            "https://github.com/octocat/hello-world",
+            stubRepo(owner = "octocat").copy(name = "hello-world").webUrl()
+        )
+        assertEquals("https://github.com", resolveRepoWebUrl("", "app"))
     }
 }

@@ -158,3 +158,23 @@ actual fun openUrlInBrowser(url: String): Boolean {
         false
     }
 }
+
+actual fun shareText(text: String, title: String?): Boolean {
+    return try {
+        val context = AndroidAuthContextHolder.requireContext()
+        val sendIntent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TEXT, text)
+            if (!title.isNullOrBlank()) {
+                putExtra(Intent.EXTRA_SUBJECT, title)
+            }
+        }
+        val chooser = Intent.createChooser(sendIntent, title).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        context.startActivity(chooser)
+        true
+    } catch (_: Exception) {
+        false
+    }
+}

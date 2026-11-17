@@ -89,7 +89,9 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -104,6 +106,7 @@ import com.composables.icons.lucide.CircleCheck
 import com.composables.icons.lucide.CircleDot
 import com.composables.icons.lucide.Clock
 import com.composables.icons.lucide.Compass
+import com.composables.icons.lucide.Copy
 import com.composables.icons.lucide.ExternalLink
 import com.composables.icons.lucide.Eye
 import com.composables.icons.lucide.EyeOff
@@ -125,6 +128,7 @@ import com.composables.icons.lucide.Play
 import com.composables.icons.lucide.Plus
 import com.composables.icons.lucide.RefreshCw
 import com.composables.icons.lucide.Search
+import com.composables.icons.lucide.Share2
 import com.composables.icons.lucide.ShieldCheck
 import com.composables.icons.lucide.Star
 import com.composables.icons.lucide.Tag
@@ -134,6 +138,7 @@ import com.composables.icons.lucide.X
 import dev.maxxing.github.app.AppContainer
 import dev.maxxing.github.app.IssuePullTarget
 import dev.maxxing.github.auth.openUrlInBrowser
+import dev.maxxing.github.auth.shareText
 import dev.maxxing.github.model.BranchCompareResult
 import dev.maxxing.github.model.CodeSearchHit
 import dev.maxxing.github.model.CommitDetail
@@ -146,6 +151,7 @@ import dev.maxxing.github.model.IssueOrPullKind
 import dev.maxxing.github.model.IssueOrPullState
 import dev.maxxing.github.model.IssueOrPullSummary
 import dev.maxxing.github.model.IssueStateFilter
+import dev.maxxing.github.model.LabelTag
 import dev.maxxing.github.model.PullFileChange
 import dev.maxxing.github.model.ReleaseSummary
 import dev.maxxing.github.model.RepoDetail
@@ -154,6 +160,7 @@ import dev.maxxing.github.model.RepoParentSummary
 import dev.maxxing.github.model.RepoSecurityOverview
 import dev.maxxing.github.model.RepoSummary
 import dev.maxxing.github.model.resolveRepoCapabilities
+import dev.maxxing.github.model.resolveRepoWebUrl
 import dev.maxxing.github.model.TagRef
 import dev.maxxing.github.model.TreeEntry
 import dev.maxxing.github.model.TreeEntryType
@@ -163,6 +170,7 @@ import dev.maxxing.github.model.WorkflowRunSummary
 import dev.maxxing.github.model.WorkflowSummary
 import dev.maxxing.github.ui.components.CodeViewer
 import dev.maxxing.github.ui.components.ExpressiveStatusPill
+import dev.maxxing.github.ui.components.GitHubLabelChip
 import dev.maxxing.github.ui.components.GitHubMarkdown
 import dev.maxxing.github.ui.components.GitHubMarkdownPreNormalized
 import dev.maxxing.github.ui.components.MaxxingDropdownSelector
@@ -173,6 +181,7 @@ import dev.maxxing.github.ui.components.MaxxingLoadingState
 import dev.maxxing.github.ui.components.MaxxingPredictiveBackContainer
 import dev.maxxing.github.ui.components.MaxxingPredictiveOverlayHost
 import dev.maxxing.github.ui.components.MaxxingStarAmber
+import dev.maxxing.github.ui.components.RepoLabelsPickerDialog
 import dev.maxxing.github.ui.components.MaxxingTopHeaderDefaults
 import dev.maxxing.github.ui.components.MaxxingWavyProgress
 import dev.maxxing.github.ui.components.StarActionButton
@@ -1120,6 +1129,7 @@ fun RepoDetailScreen(
     onMessage: (String) -> Unit
 ) {
     val scope = rememberCoroutineScope()
+    val clipboard = LocalClipboardManager.current
     val viewerProfile by container.viewerProfile.collectAsState()
     val pinnedRepos by container.sessionManager.pinnedRepos.collectAsState()
     val isPinned = pinnedRepos.any { it.equals(repo.fullName, ignoreCase = true) }
@@ -1172,9 +1182,18 @@ fun RepoDetailScreen(
     var fileMutationError by remember(repo.fullName) { mutableStateOf<String?>(null) }
 
     var showBranchMenu by remember(repo.fullName) { mutableStateOf(false) }
+    var showShareMenu by remember(repo.fullName) { mutableStateOf(false) }
     var showCreateIssueDialog by remember(repo.fullName) { mutableStateOf(false) }
     var newIssueTitle by remember(repo.fullName) { mutableStateOf("") }
     var newIssueBody by remember(repo.fullName) { mutableStateOf("") }
+    var creatingIssue by remember(repo.fullName) { mutableStateOf(false) }
+    var createIssueError by remember(repo.fullName) { mutableStateOf<String?>(null) }
+    var showIssueLabelPicker by remember(repo.fullName) { mutableStateOf(false) }
+    var availableIssueLabels by remember(repo.fullName) { mutableStateOf<List<LabelTag>>(emptyList()) }
+    var issueLabelsLoading by remember(repo.fullName) { mutableStateOf(false) }
+    var issueLabelActionBusy by remember(repo.fullName) { mutableStateOf(false) }
+    var selectedNewIssueLabels by remember(repo.fullName) { mutableStateOf<Set<String>>(emptySet()) }
+    var newIssueLabelName by remember(repo.fullName) { mutableStateOf("") }
 
     var showPeopleDialog by remember(repo.fullName) { mutableStateOf(false) }
     var peopleTab by remember(repo.fullName) { mutableStateOf(RepoPeopleTab.STARGAZERS) }
@@ -1784,6 +1803,20 @@ fun RepoDetailScreen(
         }
     }
 
+    LaunchedEffect(showCreateIssueDialog, repo.fullName, capabilities.canTriage) {
+        if (showCreateIssueDialog && capabilities.canTriage) {
+            issueLabelsLoading = availableIssueLabels.isEmpty()
+            container.repository.getRepoLabels(repo.owner, repo.name)
+                .onSuccess { availableIssueLabels = it }
+                .onFailure {
+                    if (availableIssueLabels.isEmpty()) {
+                        onMessage(it.message ?: "Failed to load labels")
+                    }
+                }
+            issueLabelsLoading = false
+        }
+    }
+
     LaunchedEffect(issueStateRevision, repo.fullName, issueStateFilter, pullStateFilter) {
         if (issueStateRevision > 0L) {
             container.repository.peekRepoIssuesOrPulls(
@@ -2053,13 +2086,64 @@ fun RepoDetailScreen(
                             ToggleButton(
                                 checked = false,
                                 onCheckedChange = { openPeopleTab(RepoPeopleTab.STARGAZERS) },
-                                shapes = ButtonGroupDefaults.connectedTrailingButtonShapes(),
+                                shapes = ButtonGroupDefaults.connectedMiddleButtonShapes(),
                                 contentPadding = actionPad,
                                 colors = FilledTonalToggleButtonDefaults.colors()
                             ) {
                                 Icon(Lucide.Users, contentDescription = "Network", modifier = Modifier.size(16.dp))
                                 Spacer(Modifier.width(4.dp))
                                 Text("Network", maxLines = 1, softWrap = false)
+                            }
+
+                            Box {
+                                ToggleButton(
+                                    checked = showShareMenu,
+                                    onCheckedChange = { showShareMenu = true },
+                                    shapes = ButtonGroupDefaults.connectedTrailingButtonShapes(),
+                                    contentPadding = actionPad,
+                                    colors = FilledTonalToggleButtonDefaults.colors()
+                                ) {
+                                    Icon(Lucide.Share2, contentDescription = "Share repository", modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text("Share", maxLines = 1, softWrap = false)
+                                }
+                                val repoUrl = resolveRepoWebUrl(repo.owner, repo.name)
+                                DropdownMenu(
+                                    expanded = showShareMenu,
+                                    onDismissRequest = { showShareMenu = false }
+                                ) {
+                                    DropdownMenuItem(
+                                        leadingIcon = { Icon(Lucide.Copy, contentDescription = null, modifier = Modifier.size(16.dp)) },
+                                        text = { Text("Copy URL") },
+                                        onClick = {
+                                            showShareMenu = false
+                                            clipboard.setText(AnnotatedString(repoUrl))
+                                            onMessage("Copied $repoUrl")
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        leadingIcon = { Icon(Lucide.Share2, contentDescription = null, modifier = Modifier.size(16.dp)) },
+                                        text = { Text("Share...") },
+                                        onClick = {
+                                            showShareMenu = false
+                                            if (!shareText(repoUrl, title = repo.fullName)) {
+                                                clipboard.setText(AnnotatedString(repoUrl))
+                                                onMessage("Copied $repoUrl")
+                                            }
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        leadingIcon = { Icon(Lucide.ExternalLink, contentDescription = null, modifier = Modifier.size(16.dp)) },
+                                        text = { Text("Open in browser") },
+                                        onClick = {
+                                            showShareMenu = false
+                                            if (!openUrlInBrowser(repoUrl)) {
+                                                clipboard.setText(AnnotatedString(repoUrl))
+                                                onMessage("Copied $repoUrl")
+                                            }
+                                        }
+                                    )
+                                }
                             }
                         }
 
@@ -2941,39 +3025,123 @@ fun RepoDetailScreen(
         MaxxingFullScreenEditorScaffold(
             title = "New Issue",
             subtitle = repo.fullName,
-            saveLabel = "Create",
-            canSave = newIssueTitle.isNotBlank(),
-            isSubmitting = false,
+            saveLabel = if (creatingIssue) "Creating..." else "Create",
+            canSave = newIssueTitle.isNotBlank() && !creatingIssue,
+            isSubmitting = creatingIssue,
+            errorMsg = createIssueError,
             bodyValue = newIssueBody,
             onBodyChange = { newIssueBody = it },
             bodyLabel = "Description (Markdown)",
             supportsMarkdownPreview = true,
-            onDismiss = { showCreateIssueDialog = false },
+            onDismiss = {
+                if (!creatingIssue) {
+                    showCreateIssueDialog = false
+                    createIssueError = null
+                }
+            },
             onSave = {
-                val title = newIssueTitle
+                val title = newIssueTitle.trim()
                 val body = newIssueBody
-                showCreateIssueDialog = false
+                val labels = if (capabilities.canTriage) selectedNewIssueLabels.toList() else emptyList()
+                creatingIssue = true
+                createIssueError = null
                 scope.launch {
-                    container.repository.createIssue(repo.owner, repo.name, title, body)
+                    container.repository.createIssue(repo.owner, repo.name, title, body, labels)
                         .onSuccess { createdNumber ->
+                            creatingIssue = false
+                            showCreateIssueDialog = false
                             newIssueTitle = ""
                             newIssueBody = ""
+                            selectedNewIssueLabels = emptySet()
                             onMessage("Created Issue #$createdNumber")
                             onOpenIssueOrPull(IssuePullTarget(repo.owner, repo.name, createdNumber, title))
                         }
-                        .onFailure { onMessage(it.message ?: "Failed to create issue") }
+                        .onFailure { err ->
+                            creatingIssue = false
+                            createIssueError = err.message ?: "Failed to create issue"
+                        }
                 }
             },
             headerContent = {
                 OutlinedTextField(
                     value = newIssueTitle,
                     onValueChange = { newIssueTitle = it },
+                    enabled = !creatingIssue,
                     label = { Text("Title") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
+                if (capabilities.canTriage) {
+                    val selectedLabelTags = remember(availableIssueLabels, selectedNewIssueLabels) {
+                        val byName = availableIssueLabels.associateBy { it.name }
+                        selectedNewIssueLabels.map { name -> byName[name] ?: LabelTag(name = name, colorHex = "6E40C9") }
+                    }
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                        itemVerticalAlignment = Alignment.CenterVertically
+                    ) {
+                        AssistChip(
+                            onClick = { showIssueLabelPicker = true },
+                            enabled = !creatingIssue,
+                            leadingIcon = { Icon(Lucide.Tag, contentDescription = null, modifier = Modifier.size(14.dp)) },
+                            label = {
+                                Text(
+                                    if (selectedNewIssueLabels.isEmpty()) "Labels" else "Labels (${selectedNewIssueLabels.size})"
+                                )
+                            }
+                        )
+                        selectedLabelTags.forEach { tag ->
+                            GitHubLabelChip(
+                                name = tag.name,
+                                colorHex = tag.colorHex,
+                                modifier = Modifier.clickable(enabled = !creatingIssue) {
+                                    selectedNewIssueLabels = selectedNewIssueLabels - tag.name
+                                }
+                            )
+                        }
+                    }
+                }
             }
         )
+
+        if (showIssueLabelPicker) {
+            RepoLabelsPickerDialog(
+                title = "Select Labels",
+                availableLabels = availableIssueLabels,
+                selectedLabelNames = selectedNewIssueLabels,
+                onToggleLabel = { labelName, isChecked ->
+                    selectedNewIssueLabels = if (isChecked) {
+                        selectedNewIssueLabels + labelName
+                    } else {
+                        selectedNewIssueLabels - labelName
+                    }
+                },
+                onDismiss = { showIssueLabelPicker = false },
+                onConfirm = { showIssueLabelPicker = false },
+                confirmLabel = "Done",
+                isLoading = issueLabelsLoading,
+                isBusy = issueLabelActionBusy,
+                canCreateLabel = capabilities.canPush,
+                newLabelName = newIssueLabelName,
+                onNewLabelNameChange = { newIssueLabelName = it },
+                onCreateLabel = { name ->
+                    scope.launch {
+                        issueLabelActionBusy = true
+                        container.repository.createRepoLabel(repo.owner, repo.name, name, "6E40C9")
+                            .onSuccess { created ->
+                                availableIssueLabels = (availableIssueLabels + created).distinctBy { it.name }
+                                selectedNewIssueLabels = selectedNewIssueLabels + created.name
+                                newIssueLabelName = ""
+                                onMessage("Created label ${created.name}")
+                            }
+                            .onFailure { onMessage(it.message ?: "Failed to create label") }
+                        issueLabelActionBusy = false
+                    }
+                }
+            )
+        }
     }
 
     fullScreenDiffContext?.let { (activeFile, allFiles) ->

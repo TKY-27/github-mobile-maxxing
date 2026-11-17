@@ -109,6 +109,7 @@ import dev.maxxing.github.ui.components.MaxxingFullScreenEditorScaffold
 import dev.maxxing.github.ui.components.MaxxingLoadingState
 import dev.maxxing.github.ui.components.MaxxingSplitActionButton
 import dev.maxxing.github.ui.components.MaxxingWavyProgress
+import dev.maxxing.github.ui.components.RepoLabelsPickerDialog
 import dev.maxxing.github.ui.components.SplitActionOption
 import dev.maxxing.github.ui.components.UserAvatar
 import dev.maxxing.github.ui.components.diffFileLazyItems
@@ -924,110 +925,53 @@ fun IssuePullDetailPane(
     }
 
     if (showLabelsDialog) {
-        AlertDialog(
-            onDismissRequest = { showLabelsDialog = false },
-            title = { Text("Manage Labels") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Column(
-                        modifier = Modifier.fillMaxWidth().height(210.dp).verticalScroll(rememberScrollState()),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        if (availableLabels.isEmpty()) {
-                            Text("No labels found in repository.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        availableLabels.forEach { label ->
-                            val checked = label.name in selectedLabelNames
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        selectedLabelNames = if (checked) {
-                                            selectedLabelNames - label.name
-                                        } else {
-                                            selectedLabelNames + label.name
-                                        }
-                                    }
-                                    .padding(vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Checkbox(
-                                    checked = checked,
-                                    onCheckedChange = { isChecked ->
-                                        selectedLabelNames = if (isChecked) {
-                                            selectedLabelNames + label.name
-                                        } else {
-                                            selectedLabelNames - label.name
-                                        }
-                                    }
-                                )
-                                GitHubLabelChip(name = label.name, colorHex = label.colorHex)
-                            }
-                        }
-                    }
-
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        OutlinedTextField(
-                            value = newLabelName,
-                            onValueChange = { newLabelName = it },
-                            label = { Text("New label") },
-                            singleLine = true,
-                            modifier = Modifier.weight(1f)
-                        )
-                        FilledTonalIconButton(
-                            enabled = newLabelName.isNotBlank() && !actionBusy,
-                            onClick = {
-                                val name = newLabelName.trim()
-                                scope.launch {
-                                    actionBusy = true
-                                    container.repository.createRepoLabel(target.owner, target.repo, name, newLabelColor)
-                                        .onSuccess { created ->
-                                            availableLabels = (availableLabels + created).distinctBy { it.name }
-                                            selectedLabelNames = selectedLabelNames + created.name
-                                            newLabelName = ""
-                                            onMessage("Created label ${created.name}")
-                                        }
-                                        .onFailure { onMessage(it.message ?: "Failed to create label") }
-                                    actionBusy = false
-                                }
-                            }
-                        ) {
-                            Icon(Lucide.Plus, contentDescription = "Create label")
-                        }
-                    }
+        RepoLabelsPickerDialog(
+            title = "Manage Labels",
+            availableLabels = availableLabels,
+            selectedLabelNames = selectedLabelNames,
+            onToggleLabel = { labelName, isChecked ->
+                selectedLabelNames = if (isChecked) {
+                    selectedLabelNames + labelName
+                } else {
+                    selectedLabelNames - labelName
                 }
             },
-            confirmButton = {
-                Button(
-                    enabled = !actionBusy,
-                    onClick = {
-                        val nextLabels = selectedLabelNames.toList()
-                        showLabelsDialog = false
-                        scope.launch {
-                            actionBusy = true
-                            container.repository.updateIssueOrPullMetadata(
-                                owner = target.owner,
-                                repo = target.repo,
-                                number = target.number,
-                                labels = nextLabels
-                            ).onSuccess {
-                                onMessage("Updated labels")
-                                loadDetail(forceRefresh = true)
-                            }.onFailure {
-                                onMessage(it.message ?: "Failed to update labels")
-                            }
-                            actionBusy = false
-                        }
+            onDismiss = { showLabelsDialog = false },
+            onConfirm = {
+                val nextLabels = selectedLabelNames.toList()
+                showLabelsDialog = false
+                scope.launch {
+                    actionBusy = true
+                    container.repository.updateIssueOrPullMetadata(
+                        owner = target.owner,
+                        repo = target.repo,
+                        number = target.number,
+                        labels = nextLabels
+                    ).onSuccess {
+                        onMessage("Updated labels")
+                        loadDetail(forceRefresh = true)
+                    }.onFailure {
+                        onMessage(it.message ?: "Failed to update labels")
                     }
-                ) {
-                    Text("Save")
+                    actionBusy = false
                 }
             },
-            dismissButton = {
-                TextButton(onClick = { showLabelsDialog = false }) { Text("Cancel") }
+            isBusy = actionBusy,
+            newLabelName = newLabelName,
+            onNewLabelNameChange = { newLabelName = it },
+            onCreateLabel = { name ->
+                scope.launch {
+                    actionBusy = true
+                    container.repository.createRepoLabel(target.owner, target.repo, name, newLabelColor)
+                        .onSuccess { created ->
+                            availableLabels = (availableLabels + created).distinctBy { it.name }
+                            selectedLabelNames = selectedLabelNames + created.name
+                            newLabelName = ""
+                            onMessage("Created label ${created.name}")
+                        }
+                        .onFailure { onMessage(it.message ?: "Failed to create label") }
+                    actionBusy = false
+                }
             }
         )
     }
