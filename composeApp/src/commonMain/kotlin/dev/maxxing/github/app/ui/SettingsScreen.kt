@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CardDefaults
@@ -40,6 +41,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.composables.icons.lucide.Bell
 import com.composables.icons.lucide.Check
@@ -48,6 +51,7 @@ import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.Palette
 import com.composables.icons.lucide.Shield
 import dev.maxxing.github.app.AppContainer
+import dev.maxxing.github.app.MaxxingBuildConfig
 import dev.maxxing.github.app.notifications.PlatformNotifier
 import dev.maxxing.github.ui.components.MaxxingDropdownSelector
 import dev.maxxing.github.ui.components.MaxxingWavyProgress
@@ -453,6 +457,27 @@ fun SettingsScreen(
                     }
                 }
             }
+
+            SelectionContainer {
+                Text(
+                    text = formatAppBuildFooter(
+                        versionName = MaxxingBuildConfig.APP_VERSION_NAME,
+                        commitSha = MaxxingBuildConfig.APP_COMMIT_SHA
+                    ),
+                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 4.dp, bottom = 8.dp)
+                )
+            }
         }
     }
+}
+
+internal fun formatAppBuildFooter(versionName: String, commitSha: String): String {
+    val cleanVersion = versionName.trim().removePrefix("v").ifBlank { "dev" }
+    val cleanCommit = commitSha.trim().ifBlank { "unknown" }
+    return "v$cleanVersion ($cleanCommit)"
 }

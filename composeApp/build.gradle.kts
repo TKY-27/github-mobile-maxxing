@@ -17,19 +17,46 @@ val localProps = Properties().apply {
 val defaultGitHubClientId: String = localProps.getProperty("github.client.id", "")
     .replace("\"", "")
 
+fun runGitCommand(vararg args: String): String? = runCatching {
+    val proc = ProcessBuilder("git", *args)
+        .directory(rootProject.projectDir)
+        .redirectErrorStream(true)
+        .start()
+    val output = proc.inputStream.bufferedReader().readText().trim()
+    val exit = proc.waitFor()
+    if (exit == 0 && output.isNotEmpty()) output else null
+}.getOrNull()
+
+fun escapeKotlinStringLiteral(value: String): String =
+    value.replace("\\", "\\\\").replace("\"", "\\\"").replace("$", "\\$")
+
+val resolvedGitCommitCount: Int = runGitCommand("rev-list", "--count", "HEAD")?.toIntOrNull() ?: 1
+val resolvedCommitSha: String = runGitCommand("rev-parse", "--short", "HEAD") ?: "unknown"
+val resolvedAppVersionName: String = System.getenv("ANDROID_VERSION_NAME")
+    ?.trim()
+    ?.takeIf { it.isNotEmpty() }
+    ?: "1.0.$resolvedGitCommitCount"
+
 val generateMaxxingConfig by tasks.registering {
     val outDir = layout.buildDirectory.dir("generated/maxxingConfig/kotlin")
     inputs.property("clientId", defaultGitHubClientId)
+    inputs.property("versionName", resolvedAppVersionName)
+    inputs.property("commitSha", resolvedCommitSha)
     outputs.dir(outDir)
     doLast {
         val dir = outDir.get().asFile.resolve("dev/maxxing/github/app")
         dir.mkdirs()
+        val safeClientId = escapeKotlinStringLiteral(defaultGitHubClientId)
+        val safeVersionName = escapeKotlinStringLiteral(resolvedAppVersionName)
+        val safeCommitSha = escapeKotlinStringLiteral(resolvedCommitSha)
         dir.resolve("MaxxingBuildConfig.kt").writeText(
             """
             package dev.maxxing.github.app
 
             internal object MaxxingBuildConfig {
-                const val DEFAULT_GITHUB_CLIENT_ID: String = "$defaultGitHubClientId"
+                const val DEFAULT_GITHUB_CLIENT_ID: String = "$safeClientId"
+                const val APP_VERSION_NAME: String = "$safeVersionName"
+                const val APP_COMMIT_SHA: String = "$safeCommitSha"
             }
             """.trimIndent()
         )
