@@ -12,6 +12,8 @@ class AppBrandingTest {
     fun appBrandingUsesGithubMobileMaxxingIdentity() {
         assertEquals("github-mobile-maxxing", AppBranding.APP_NAME)
         assertEquals("github-mobile-maxxing-KMP/1.0", AppBranding.USER_AGENT)
+        assertEquals("Ov23lihCAIZTj1Puaf9r", AppBranding.DEFAULT_OAUTH_CLIENT_ID)
+        assertEquals("Ov23lihCAIZTj1Puaf9r", MaxxingBuildConfig.DEFAULT_GITHUB_CLIENT_ID)
     }
 
     @Test

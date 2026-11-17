@@ -14,8 +14,10 @@ val localProps = Properties().apply {
         file.inputStream().use { load(it) }
     }
 }
-val defaultGitHubClientId: String = localProps.getProperty("github.client.id", "")
+val defaultGitHubClientId: String = localProps.getProperty("github.client.id", "Ov23lihCAIZTj1Puaf9r")
     .replace("\"", "")
+    .trim()
+    .ifEmpty { "Ov23lihCAIZTj1Puaf9r" }
 
 fun runGitCommand(vararg args: String): String? = runCatching {
     val proc = ProcessBuilder("git", *args)

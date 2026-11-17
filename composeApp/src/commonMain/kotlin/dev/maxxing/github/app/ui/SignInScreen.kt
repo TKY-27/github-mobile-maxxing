@@ -1,6 +1,6 @@
 package dev.maxxing.github.app.ui
 
-import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -27,13 +27,12 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -51,14 +50,12 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.composables.icons.lucide.Copy
 import com.composables.icons.lucide.ExternalLink
-import com.composables.icons.lucide.KeyRound
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.ShieldCheck
 import dev.maxxing.github.app.resources.Res
@@ -76,11 +73,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.jetbrains.compose.resources.painterResource
 
-private enum class SignInTab(val label: String) {
-    OAUTH_DEVICE("OAuth Device Flow"),
-    PAT("Personal Token")
-}
-
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun SignInScreen(
@@ -88,12 +80,10 @@ fun SignInScreen(
     onSignedIn: () -> Unit
 ) {
     val savedClientId by sessionManager.clientId.collectAsState()
-    var clientIdInput by remember(savedClientId) { mutableStateOf(savedClientId) }
-    var patInput by remember { mutableStateOf("") }
-    var selectedTab by remember { mutableStateOf(SignInTab.OAUTH_DEVICE) }
+    val effectiveDefaultId = savedClientId.ifBlank { AppBranding.DEFAULT_OAUTH_CLIENT_ID }
+    var clientIdInput by remember(effectiveDefaultId) { mutableStateOf(effectiveDefaultId) }
+    var showCustomClientId by remember { mutableStateOf(false) }
     var deviceState by remember { mutableStateOf<DeviceCodeState>(DeviceCodeState.Idle) }
-    var patLoading by remember { mutableStateOf(false) }
-    var patError by remember { mutableStateOf<String?>(null) }
 
     val scope = rememberCoroutineScope()
     var pollingJob by remember { mutableStateOf<Job?>(null) }
@@ -150,306 +140,252 @@ fun SignInScreen(
                         textAlign = TextAlign.Center
                     )
 
-                    Spacer(Modifier.height(22.dp))
+                    Spacer(Modifier.height(24.dp))
 
-                    PrimaryTabRow(
-                        selectedTabIndex = SignInTab.entries.indexOf(selectedTab).coerceAtLeast(0),
-                        containerColor = androidx.compose.ui.graphics.Color.Transparent
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        SignInTab.entries.forEach { tab ->
-                            Tab(
-                                selected = selectedTab == tab,
-                                onClick = { selectedTab = tab },
-                                text = { Text(tab.label, maxLines = 1, softWrap = false) }
-                            )
-                        }
-                    }
+                        when (val state = deviceState) {
+                            is DeviceCodeState.Idle,
+                            is DeviceCodeState.Error -> {
+                                if (state is DeviceCodeState.Error) {
+                                    Surface(
+                                        color = MaterialTheme.colorScheme.errorContainer,
+                                        shape = MaterialTheme.shapes.medium,
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text(
+                                            text = state.message,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onErrorContainer,
+                                            modifier = Modifier.padding(12.dp)
+                                        )
+                                    }
+                                    Spacer(Modifier.height(14.dp))
+                                }
 
-                    Spacer(Modifier.height(22.dp))
-
-                    AnimatedContent(targetState = selectedTab) { tab ->
-                        when (tab) {
-                            SignInTab.OAUTH_DEVICE -> {
-                                Column(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalAlignment = Alignment.CenterHorizontally
+                                Button(
+                                    onClick = {
+                                        val activeId = clientIdInput.trim().ifBlank { AppBranding.DEFAULT_OAUTH_CLIENT_ID }
+                                        pollingJob?.cancel()
+                                        pollingJob = scope.launch {
+                                            sessionManager.startDeviceFlow(activeId)
+                                                .collect { next ->
+                                                    deviceState = next
+                                                    if (next is DeviceCodeState.Authenticated) {
+                                                        onSignedIn()
+                                                    }
+                                                }
+                                        }
+                                    },
+                                    enabled = clientIdInput.isNotBlank(),
+                                    modifier = Modifier.fillMaxWidth().height(52.dp)
                                 ) {
-                                    when (val state = deviceState) {
-                                        is DeviceCodeState.Idle,
-                                        is DeviceCodeState.Error -> {
-                                            OutlinedTextField(
-                                                value = clientIdInput,
-                                                onValueChange = { clientIdInput = it },
-                                                label = { Text("GitHub OAuth App Client ID") },
-                                                placeholder = { Text("Ov23li...") },
-                                                singleLine = true,
-                                                leadingIcon = {
-                                                    Icon(Lucide.ShieldCheck, contentDescription = null)
-                                                },
-                                                supportingText = {
-                                                    Text("Enable Device Flow in your GitHub OAuth/GitHub App settings. No secret required.")
-                                                },
-                                                modifier = Modifier.fillMaxWidth()
-                                            )
+                                    Text("Sign in with GitHub")
+                                }
 
-                                            if (state is DeviceCodeState.Error) {
-                                                Spacer(Modifier.height(12.dp))
-                                                Surface(
-                                                    color = MaterialTheme.colorScheme.errorContainer,
-                                                    shape = MaterialTheme.shapes.medium,
-                                                    modifier = Modifier.fillMaxWidth()
-                                                ) {
-                                                    Text(
-                                                        text = state.message,
-                                                        style = MaterialTheme.typography.bodySmall,
-                                                        color = MaterialTheme.colorScheme.onErrorContainer,
-                                                        modifier = Modifier.padding(12.dp)
-                                                    )
-                                                }
-                                            }
+                                Spacer(Modifier.height(10.dp))
 
-                                            Spacer(Modifier.height(18.dp))
+                                TextButton(onClick = { showCustomClientId = !showCustomClientId }) {
+                                    Text(if (showCustomClientId) "Hide custom OAuth Client ID" else "Use custom OAuth Client ID")
+                                }
 
-                                            Button(
-                                                onClick = {
-                                                    pollingJob?.cancel()
-                                                    pollingJob = scope.launch {
-                                                        sessionManager.startDeviceFlow(clientIdInput)
-                                                            .collect { next ->
-                                                                deviceState = next
-                                                                if (next is DeviceCodeState.Authenticated) {
-                                                                    onSignedIn()
-                                                                }
-                                                            }
-                                                    }
-                                                },
-                                                enabled = clientIdInput.isNotBlank(),
-                                                modifier = Modifier.fillMaxWidth().height(52.dp)
+                                AnimatedVisibility(visible = showCustomClientId) {
+                                    Column(
+                                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        OutlinedTextField(
+                                            value = clientIdInput,
+                                            onValueChange = { clientIdInput = it },
+                                            label = { Text("GitHub OAuth App Client ID") },
+                                            placeholder = { Text(AppBranding.DEFAULT_OAUTH_CLIENT_ID) },
+                                            singleLine = true,
+                                            leadingIcon = {
+                                                Icon(Lucide.ShieldCheck, contentDescription = null)
+                                            },
+                                            supportingText = {
+                                                Text("Defaults to ${AppBranding.DEFAULT_OAUTH_CLIENT_ID}. Enable Device Flow if overriding.")
+                                            },
+                                            modifier = Modifier.fillMaxWidth()
+                                        )
+                                        if (clientIdInput != AppBranding.DEFAULT_OAUTH_CLIENT_ID) {
+                                            TextButton(
+                                                onClick = { clientIdInput = AppBranding.DEFAULT_OAUTH_CLIENT_ID },
+                                                modifier = Modifier.align(Alignment.End)
                                             ) {
-                                                Text("Sign in with GitHub OAuth")
+                                                Text("Reset to default")
                                             }
-                                        }
-
-                                        is DeviceCodeState.RequestingCode -> {
-                                            MaxxingLoadingState(message = "Requesting device code from GitHub...")
-                                        }
-
-                                        is DeviceCodeState.AwaitingUser -> {
-                                            Text(
-                                                text = "Enter this code on GitHub",
-                                                style = MaterialTheme.typography.titleMedium
-                                            )
-                                            Spacer(Modifier.height(12.dp))
-
-                                            Surface(
-                                                color = MaterialTheme.colorScheme.primaryContainer,
-                                                shape = MaterialTheme.shapes.large,
-                                                modifier = Modifier.fillMaxWidth()
-                                            ) {
-                                                SelectionContainer {
-                                                    Text(
-                                                        text = state.userCode,
-                                                        style = MaterialTheme.typography.headlineMedium.copy(
-                                                            fontFamily = FontFamily.Monospace,
-                                                            fontWeight = FontWeight.ExtraBold,
-                                                            letterSpacing = 3.sp
-                                                        ),
-                                                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                                        textAlign = TextAlign.Center,
-                                                        modifier = Modifier.padding(vertical = 18.dp, horizontal = 12.dp)
-                                                    )
-                                                }
-                                            }
-
-                                            Spacer(Modifier.height(10.dp))
-
-                                            Surface(
-                                                color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                                                shape = MaterialTheme.shapes.medium,
-                                                modifier = Modifier.fillMaxWidth()
-                                            ) {
-                                                Row(
-                                                    modifier = Modifier.padding(start = 12.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
-                                                    verticalAlignment = Alignment.CenterVertically
-                                                ) {
-                                                    SelectionContainer(modifier = Modifier.weight(1f)) {
-                                                        Text(
-                                                            text = state.verificationUri,
-                                                            style = MaterialTheme.typography.bodySmall.copy(
-                                                                fontFamily = FontFamily.Monospace
-                                                            ),
-                                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                            maxLines = 1,
-                                                            overflow = TextOverflow.Ellipsis
-                                                        )
-                                                    }
-                                                    IconButton(
-                                                        onClick = {
-                                                            runCatching {
-                                                                clipboard.setText(AnnotatedString(state.verificationUri))
-                                                            }
-                                                            scope.launch {
-                                                                snackbarHostState.showSnackbar("Copied ${state.verificationUri}")
-                                                            }
-                                                        },
-                                                        modifier = Modifier.pointerHoverIcon(PointerIcon.Hand)
-                                                    ) {
-                                                        Icon(
-                                                            Lucide.Copy,
-                                                            contentDescription = "Copy URL",
-                                                            modifier = Modifier.size(16.dp)
-                                                        )
-                                                    }
-                                                }
-                                            }
-
-                                            Spacer(Modifier.height(14.dp))
-                                            MaxxingWavyProgress()
-                                            Spacer(Modifier.height(10.dp))
-
-                                            Text(
-                                                text = state.statusMessage ?: "Waiting for authorization...",
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                textAlign = TextAlign.Center
-                                            )
-
-                                            Spacer(Modifier.height(16.dp))
-
-                                            Row(
-                                                modifier = Modifier.fillMaxWidth(),
-                                                horizontalArrangement = Arrangement.spacedBy(10.dp)
-                                            ) {
-                                                FilledTonalButton(
-                                                    onClick = {
-                                                        runCatching {
-                                                            clipboard.setText(AnnotatedString(state.userCode))
-                                                        }
-                                                        scope.launch {
-                                                            snackbarHostState.showSnackbar("Copied ${state.userCode}")
-                                                        }
-                                                    },
-                                                    modifier = Modifier
-                                                        .weight(1f)
-                                                        .pointerHoverIcon(PointerIcon.Hand)
-                                                ) {
-                                                    Icon(Lucide.Copy, contentDescription = null, modifier = Modifier.size(16.dp))
-                                                    Spacer(Modifier.width(6.dp))
-                                                    Text("Copy Code", maxLines = 1, softWrap = false)
-                                                }
-
-                                                Button(
-                                                    onClick = {
-                                                        scope.launch {
-                                                            runCatching {
-                                                                clipboard.setText(AnnotatedString(state.userCode))
-                                                            }
-                                                            val openedByPlatform = withContext(Dispatchers.IO) {
-                                                                openUrlInBrowser(state.verificationUri)
-                                                            }
-                                                            val opened = if (openedByPlatform) {
-                                                                true
-                                                            } else {
-                                                                runCatching {
-                                                                    uriHandler.openUri(state.verificationUri)
-                                                                    true
-                                                                }.getOrDefault(false)
-                                                            }
-                                                            snackbarHostState.showSnackbar(
-                                                                if (opened) {
-                                                                    "Code ${state.userCode} copied. Opening GitHub..."
-                                                                } else {
-                                                                    "Code ${state.userCode} copied. Open ${state.verificationUri} in your browser."
-                                                                }
-                                                            )
-                                                        }
-                                                    },
-                                                    modifier = Modifier
-                                                        .weight(1f)
-                                                        .pointerHoverIcon(PointerIcon.Hand)
-                                                ) {
-                                                    Icon(Lucide.ExternalLink, contentDescription = null, modifier = Modifier.size(16.dp))
-                                                    Spacer(Modifier.width(6.dp))
-                                                    Text("Open GitHub", maxLines = 1, softWrap = false)
-                                                }
-                                            }
-
-                                            Spacer(Modifier.height(10.dp))
-                                            OutlinedButton(
-                                                onClick = {
-                                                    pollingJob?.cancel()
-                                                    deviceState = DeviceCodeState.Idle
-                                                },
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .pointerHoverIcon(PointerIcon.Hand)
-                                            ) {
-                                                Text("Cancel")
-                                            }
-                                        }
-
-                                        is DeviceCodeState.Verifying -> {
-                                            MaxxingLoadingState(message = state.message)
-                                        }
-
-                                        is DeviceCodeState.Authenticated -> {
-                                            MaxxingLoadingState(message = "Welcome, @${state.session.userLogin ?: "developer"}!")
                                         }
                                     }
                                 }
                             }
 
-                            SignInTab.PAT -> {
-                                Column(modifier = Modifier.fillMaxWidth()) {
-                                    OutlinedTextField(
-                                        value = patInput,
-                                        onValueChange = {
-                                            patInput = it
-                                            patError = null
-                                        },
-                                        label = { Text("GitHub Personal Access Token") },
-                                        placeholder = { Text("ghp_... or github_pat_...") },
-                                        singleLine = true,
-                                        visualTransformation = PasswordVisualTransformation(),
-                                        leadingIcon = { Icon(Lucide.KeyRound, contentDescription = null) },
-                                        supportingText = {
-                                            Text("Requires repo, gist, notifications, read:user, user:follow scopes.")
-                                        },
-                                        modifier = Modifier.fillMaxWidth()
-                                    )
+                            is DeviceCodeState.RequestingCode -> {
+                                MaxxingLoadingState(message = "Requesting device code from GitHub...")
+                            }
 
-                                    if (patError != null) {
-                                        Spacer(Modifier.height(10.dp))
+                            is DeviceCodeState.AwaitingUser -> {
+                                Text(
+                                    text = "Enter this code on GitHub",
+                                    style = MaterialTheme.typography.titleMedium
+                                )
+                                Spacer(Modifier.height(12.dp))
+
+                                Surface(
+                                    color = MaterialTheme.colorScheme.primaryContainer,
+                                    shape = MaterialTheme.shapes.large,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    SelectionContainer {
                                         Text(
-                                            text = patError!!,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.error
+                                            text = state.userCode,
+                                            style = MaterialTheme.typography.headlineMedium.copy(
+                                                fontFamily = FontFamily.Monospace,
+                                                fontWeight = FontWeight.ExtraBold,
+                                                letterSpacing = 3.sp
+                                            ),
+                                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                            textAlign = TextAlign.Center,
+                                            modifier = Modifier.padding(vertical = 18.dp, horizontal = 12.dp)
                                         )
                                     }
+                                }
 
-                                    Spacer(Modifier.height(14.dp))
-                                    if (patLoading) {
-                                        MaxxingWavyProgress()
-                                        Spacer(Modifier.height(12.dp))
+                                Spacer(Modifier.height(10.dp))
+
+                                Surface(
+                                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                    shape = MaterialTheme.shapes.medium,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(start = 12.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        SelectionContainer(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = state.verificationUri,
+                                                style = MaterialTheme.typography.bodySmall.copy(
+                                                    fontFamily = FontFamily.Monospace
+                                                ),
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
+                                        IconButton(
+                                            onClick = {
+                                                runCatching {
+                                                    clipboard.setText(AnnotatedString(state.verificationUri))
+                                                }
+                                                scope.launch {
+                                                    snackbarHostState.showSnackbar("Copied ${state.verificationUri}")
+                                                }
+                                            },
+                                            modifier = Modifier.pointerHoverIcon(PointerIcon.Hand)
+                                        ) {
+                                            Icon(
+                                                Lucide.Copy,
+                                                contentDescription = "Copy URL",
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        }
+                                    }
+                                }
+
+                                Spacer(Modifier.height(14.dp))
+                                MaxxingWavyProgress()
+                                Spacer(Modifier.height(10.dp))
+
+                                Text(
+                                    text = state.statusMessage ?: "Waiting for authorization...",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    textAlign = TextAlign.Center
+                                )
+
+                                Spacer(Modifier.height(16.dp))
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    FilledTonalButton(
+                                        onClick = {
+                                            runCatching {
+                                                clipboard.setText(AnnotatedString(state.userCode))
+                                            }
+                                            scope.launch {
+                                                snackbarHostState.showSnackbar("Copied ${state.userCode}")
+                                            }
+                                        },
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .pointerHoverIcon(PointerIcon.Hand)
+                                    ) {
+                                        Icon(Lucide.Copy, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        Spacer(Modifier.width(6.dp))
+                                        Text("Copy Code", maxLines = 1, softWrap = false)
                                     }
 
                                     Button(
                                         onClick = {
                                             scope.launch {
-                                                patLoading = true
-                                                patError = null
-                                                val result = sessionManager.signInWithPat(patInput)
-                                                patLoading = false
-                                                result.onSuccess { onSignedIn() }
-                                                    .onFailure { patError = it.message ?: "Invalid token" }
+                                                runCatching {
+                                                    clipboard.setText(AnnotatedString(state.userCode))
+                                                }
+                                                val openedByPlatform = withContext(Dispatchers.IO) {
+                                                    openUrlInBrowser(state.verificationUri)
+                                                }
+                                                val opened = if (openedByPlatform) {
+                                                    true
+                                                } else {
+                                                    runCatching {
+                                                        uriHandler.openUri(state.verificationUri)
+                                                        true
+                                                    }.getOrDefault(false)
+                                                }
+                                                snackbarHostState.showSnackbar(
+                                                    if (opened) {
+                                                        "Code ${state.userCode} copied. Opening GitHub..."
+                                                    } else {
+                                                        "Code ${state.userCode} copied. Open ${state.verificationUri} in your browser."
+                                                    }
+                                                )
                                             }
                                         },
-                                        enabled = patInput.isNotBlank() && !patLoading,
-                                        modifier = Modifier.fillMaxWidth().height(52.dp)
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .pointerHoverIcon(PointerIcon.Hand)
                                     ) {
-                                        Text("Sign in with Token")
+                                        Icon(Lucide.ExternalLink, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        Spacer(Modifier.width(6.dp))
+                                        Text("Open GitHub", maxLines = 1, softWrap = false)
                                     }
                                 }
+
+                                Spacer(Modifier.height(10.dp))
+                                OutlinedButton(
+                                    onClick = {
+                                        pollingJob?.cancel()
+                                        deviceState = DeviceCodeState.Idle
+                                    },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .pointerHoverIcon(PointerIcon.Hand)
+                                ) {
+                                    Text("Cancel")
+                                }
+                            }
+
+                            is DeviceCodeState.Verifying -> {
+                                MaxxingLoadingState(message = state.message)
+                            }
+
+                            is DeviceCodeState.Authenticated -> {
+                                MaxxingLoadingState(message = "Welcome, @${state.session.userLogin ?: "developer"}!")
                             }
                         }
                     }

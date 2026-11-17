@@ -4,4 +4,5 @@ package dev.maxxing.github.model
 object AppBranding {
     const val APP_NAME = "github-mobile-maxxing"
     const val USER_AGENT = "github-mobile-maxxing-KMP/1.0"
+    const val DEFAULT_OAUTH_CLIENT_ID = "Ov23lihCAIZTj1Puaf9r"
 }

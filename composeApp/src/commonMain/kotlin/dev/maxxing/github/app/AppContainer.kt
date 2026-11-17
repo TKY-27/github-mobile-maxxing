@@ -2,6 +2,7 @@ package dev.maxxing.github.app
 
 import dev.maxxing.github.app.notifications.PlatformNotifier
 import dev.maxxing.github.auth.SessionManager
+import dev.maxxing.github.model.AppBranding
 import dev.maxxing.github.model.IssueFilterPreset
 import dev.maxxing.github.model.IssueStateFilter
 import dev.maxxing.github.model.NotificationThread
@@ -28,7 +29,7 @@ class AppContainer {
     private val backgroundScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     val sessionManager: SessionManager = SessionManager(
-        defaultClientId = MaxxingBuildConfig.DEFAULT_GITHUB_CLIENT_ID
+        defaultClientId = MaxxingBuildConfig.DEFAULT_GITHUB_CLIENT_ID.ifBlank { AppBranding.DEFAULT_OAUTH_CLIENT_ID }
     )
     val repository: GitHubRepository = GitHubRepository(sessionManager)
     val notificationMonitor: NotificationMonitor = NotificationMonitor(sessionManager, repository)
