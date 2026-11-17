@@ -1,5 +1,6 @@
 package dev.maxxing.github.ui.components
 
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -18,11 +19,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.Card
@@ -46,11 +46,13 @@ import kotlinx.coroutines.withContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
@@ -256,6 +258,33 @@ internal fun computeDiffMaxLineDigits(file: PullFileChange): Int {
     return maxOf(4, maxLine.toString().length)
 }
 
+internal fun estimateDiffVisualUnits(text: String): Int {
+    var units = 0
+    for (ch in text) {
+        units += when {
+            ch == '\t' -> 4
+            ch.code >= 0x2E80 -> 2
+            else -> 1
+        }
+    }
+    return units
+}
+
+internal fun collectWidestDiffLineCandidates(
+    file: PullFileChange,
+    limit: Int = 5
+): List<String> {
+    if (limit <= 0) return emptyList()
+    return file.hunks
+        .asSequence()
+        .flatMap { it.lines.asSequence() }
+        .map { it.content }
+        .filter { it.isNotEmpty() }
+        .sortedByDescending { estimateDiffVisualUnits(it) }
+        .take(limit)
+        .toList()
+}
+
 @Composable
 private fun DiffLineRow(
     line: DiffLine,
@@ -264,7 +293,7 @@ private fun DiffLineRow(
     fontSizeSp: Float = 12f,
     lineHeightSp: Float = 18f,
     verticalPaddingDp: Float = 1f,
-    modifier: Modifier = Modifier,
+    modifier: Modifier = Modifier.fillMaxWidth(),
     onClick: (() -> Unit)? = null
 ) {
     val lineBg = when (line.kind) {
@@ -287,7 +316,6 @@ private fun DiffLineRow(
 
     Row(
         modifier = modifier
-            .fillMaxWidth()
             .background(lineBg)
             .let { if (onClick != null) it.clickable(onClick = onClick) else it }
             .padding(horizontal = 10.dp, vertical = verticalPaddingDp.dp),
@@ -352,8 +380,39 @@ fun MaxxingFullScreenDiffViewer(
     val hasPrev = onSelectFile != null && currentIndex > 0
     val hasNext = onSelectFile != null && currentIndex in 0 until files.lastIndex
     val lineDigits = remember(file) { computeDiffMaxLineDigits(file) }
-    val listState = rememberLazyListState(initialFirstVisibleItemIndex = 0)
-    val hScroll = rememberScrollState()
+    val listState = remember(file.filename) { LazyListState(firstVisibleItemIndex = 0) }
+    val hScroll = remember(file.filename) { ScrollState(0) }
+    val textMeasurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+    val contentStyle = MaterialTheme.typography.bodySmall.copy(
+        fontFamily = FontFamily.Monospace,
+        fontSize = 12.5f.sp,
+        lineHeight = 19f.sp
+    )
+    val lineNumStyle = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace)
+    val prefixStyle = MaterialTheme.typography.bodySmall.copy(
+        fontFamily = FontFamily.Monospace,
+        fontWeight = FontWeight.Bold
+    )
+    val measuredContentWidthDp = remember(file, lineDigits, contentStyle, lineNumStyle, density) {
+        val sampleDigits = "0".repeat(lineDigits)
+        val numWidthPx = textMeasurer.measure(sampleDigits, lineNumStyle, maxLines = 1, softWrap = false).size.width
+        val prefixWidthPx = textMeasurer.measure("+", prefixStyle, maxLines = 1, softWrap = false).size.width
+        val lineCandidates = collectWidestDiffLineCandidates(file, limit = 8)
+        val maxContentPx = lineCandidates.maxOfOrNull { text ->
+            textMeasurer.measure(text, contentStyle, maxLines = 1, softWrap = false).size.width
+        } ?: 0
+        val maxHunkPx = file.hunks.maxOfOrNull { hunk ->
+            textMeasurer.measure(hunk.header, lineNumStyle, maxLines = 1, softWrap = false).size.width
+        } ?: 0
+        val lineRowTotalDp = with(density) {
+            (numWidthPx * 2 + prefixWidthPx + maxContentPx).toDp()
+        } + 66.dp // horizontal row padding + spacers + breathing room
+        val hunkRowTotalDp = with(density) {
+            maxHunkPx.toDp()
+        } + 48.dp
+        maxOf(lineRowTotalDp, hunkRowTotalDp)
+    }
 
     val statusColor = when (file.status) {
         FileChangeStatus.ADDED -> Color(0xFF16A34A)
@@ -424,7 +483,8 @@ fun MaxxingFullScreenDiffViewer(
 
                 BoxWithConstraints(modifier = Modifier.weight(1f).fillMaxWidth()) {
                     val minRowWidth = maxWidth
-                    val rowModifier = if (wrapLines) Modifier.fillMaxWidth() else Modifier.widthIn(min = minRowWidth)
+                    val unifiedScrollWidth = maxOf(minRowWidth, measuredContentWidthDp)
+                    val rowModifier = if (wrapLines) Modifier.fillMaxWidth() else Modifier.width(unifiedScrollWidth)
                     val listModifier = if (wrapLines) {
                         Modifier.fillMaxSize()
                     } else {

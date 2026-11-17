@@ -98,4 +98,34 @@ class CodeViewerUtilsTest {
         )
         assertEquals(6, computeDiffMaxLineDigits(hugeFile))
     }
+
+    @Test
+    fun `collectWidestDiffLineCandidates prioritizes CJK tabs and long lines`() {
+        val sample = PullFileChange(
+            filename = "Sample.kt",
+            status = FileChangeStatus.MODIFIED,
+            additions = 3,
+            deletions = 0,
+            hunks = listOf(
+                DiffHunk(
+                    header = "@@ -1,1 +1,4 @@",
+                    oldStart = 1,
+                    oldCount = 1,
+                    newStart = 1,
+                    newCount = 4,
+                    lines = listOf(
+                        DiffLine(DiffLineKind.CONTEXT, "short", oldLineNumber = 1, newLineNumber = 1),
+                        DiffLine(DiffLineKind.ADDED, "\t\tval x = 1", oldLineNumber = null, newLineNumber = 2),
+                        DiffLine(DiffLineKind.ADDED, "日本語のコメントがとても長い行テストケース", oldLineNumber = null, newLineNumber = 3),
+                        DiffLine(DiffLineKind.ADDED, "a".repeat(30), oldLineNumber = null, newLineNumber = 4)
+                    )
+                )
+            )
+        )
+        val candidates = collectWidestDiffLineCandidates(sample, limit = 2)
+        assertEquals(2, candidates.size)
+        assertEquals("日本語のコメントがとても長い行テストケース", candidates[0])
+        assertEquals("a".repeat(30), candidates[1])
+        assertTrue(estimateDiffVisualUnits("\t\tval x = 1") > estimateDiffVisualUnits("val x = 1"))
+    }
 }
