@@ -9,6 +9,7 @@ import androidx.compose.material3.MotionScheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.Typography
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
@@ -96,12 +97,57 @@ val MaxxingTypography = Typography(
     )
 )
 
+/**
+ * Returns [MaxxingTypography] with [fontFamilyOverride] applied to every style, including the
+ * Material 3 Expressive `*Emphasized` styles. `labelSmall` and `labelSmallEmphasized` are left
+ * untouched so code/hash badges keep their monospace styling. With no override the original
+ * [MaxxingTypography] instance is returned unchanged.
+ */
+fun buildMaxxingTypography(fontFamilyOverride: FontFamily? = null): Typography {
+    if (fontFamilyOverride == null) return MaxxingTypography
+    val base = MaxxingTypography
+    fun TextStyle.withOverride(): TextStyle = copy(fontFamily = fontFamilyOverride)
+    return base.copy(
+        displayLarge = base.displayLarge.withOverride(),
+        displayMedium = base.displayMedium.withOverride(),
+        displaySmall = base.displaySmall.withOverride(),
+        headlineLarge = base.headlineLarge.withOverride(),
+        headlineMedium = base.headlineMedium.withOverride(),
+        headlineSmall = base.headlineSmall.withOverride(),
+        titleLarge = base.titleLarge.withOverride(),
+        titleMedium = base.titleMedium.withOverride(),
+        titleSmall = base.titleSmall.withOverride(),
+        bodyLarge = base.bodyLarge.withOverride(),
+        bodyMedium = base.bodyMedium.withOverride(),
+        bodySmall = base.bodySmall.withOverride(),
+        labelLarge = base.labelLarge.withOverride(),
+        labelMedium = base.labelMedium.withOverride(),
+        labelSmall = base.labelSmall, // Keep monospace styling for code/hash badges
+        displayLargeEmphasized = base.displayLargeEmphasized.withOverride(),
+        displayMediumEmphasized = base.displayMediumEmphasized.withOverride(),
+        displaySmallEmphasized = base.displaySmallEmphasized.withOverride(),
+        headlineLargeEmphasized = base.headlineLargeEmphasized.withOverride(),
+        headlineMediumEmphasized = base.headlineMediumEmphasized.withOverride(),
+        headlineSmallEmphasized = base.headlineSmallEmphasized.withOverride(),
+        titleLargeEmphasized = base.titleLargeEmphasized.withOverride(),
+        titleMediumEmphasized = base.titleMediumEmphasized.withOverride(),
+        titleSmallEmphasized = base.titleSmallEmphasized.withOverride(),
+        bodyLargeEmphasized = base.bodyLargeEmphasized.withOverride(),
+        bodyMediumEmphasized = base.bodyMediumEmphasized.withOverride(),
+        bodySmallEmphasized = base.bodySmallEmphasized.withOverride(),
+        labelLargeEmphasized = base.labelLargeEmphasized.withOverride(),
+        labelMediumEmphasized = base.labelMediumEmphasized.withOverride(),
+        labelSmallEmphasized = base.labelSmallEmphasized // Same policy as labelSmall
+    )
+}
+
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun MaxxingTheme(
     seedColorHex: Long = MaxxingSeedPresets.first().colorHex,
     useDynamicColor: Boolean = true,
     darkThemeOverride: Boolean? = null,
+    fontFamilyOverride: FontFamily? = null,
     content: @Composable () -> Unit
 ) {
     val darkTheme = darkThemeOverride ?: isSystemInDarkTheme()
@@ -113,12 +159,15 @@ fun MaxxingTheme(
         style = PaletteStyle.Expressive,
         specVersion = ColorSpec.SpecVersion.SPEC_2025
     )
+    val typography = remember(fontFamilyOverride) {
+        buildMaxxingTypography(fontFamilyOverride)
+    }
 
     MaterialExpressiveTheme(
         colorScheme = colorScheme,
         motionScheme = MotionScheme.expressive(),
         shapes = MaxxingShapes,
-        typography = MaxxingTypography,
+        typography = typography,
         content = content
     )
 }

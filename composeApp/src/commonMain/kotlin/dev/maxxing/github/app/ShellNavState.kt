@@ -1,5 +1,6 @@
 package dev.maxxing.github.app
 
+import androidx.compose.runtime.saveable.Saver
 import dev.maxxing.github.model.RepoSummary
 
 enum class ShellDestination {
@@ -87,3 +88,17 @@ data class ShellNavState(
         else -> this
     }
 }
+
+/**
+ * Saves only the bottom destination, so the app comes back on the same tab after Android recreates
+ * the process (for example while the system file picker is open from Settings, whose result is then
+ * still delivered). Back stacks and overlays start empty. An unknown name restores HOME.
+ */
+internal val ShellNavStateSaver: Saver<ShellNavState, String> = Saver(
+    save = { it.currentDestination.name },
+    restore = { name ->
+        ShellNavState(
+            currentDestination = ShellDestination.entries.firstOrNull { it.name == name } ?: ShellDestination.HOME
+        )
+    }
+)

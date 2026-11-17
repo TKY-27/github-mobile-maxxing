@@ -13,7 +13,8 @@ import java.nio.file.attribute.PosixFilePermission
 import java.util.concurrent.TimeUnit
 
 private class LinuxDesktopTokenStore : TokenStore {
-    private val json = Json { ignoreUnknownKeys = true; prettyPrint = true }
+    // The shared token store settings, pretty-printed so the files stay readable.
+    private val json = Json(from = TokenStoreJson) { prettyPrint = true }
 
     private val dataDir: File by lazy {
         val xdgData = System.getenv("XDG_DATA_HOME")?.takeIf { it.isNotBlank() }

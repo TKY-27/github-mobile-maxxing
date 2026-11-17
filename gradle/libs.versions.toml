@@ -22,9 +22,12 @@ coil = "3.6.3"
 material-kolor = "5.0.1"
 markdown-renderer = "0.39.2"
 icons-lucide = "1.1.0"
+kxml2 = "2.3.0"
 
 [libraries]
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
+# XmlPullParser implementation for JVM host tests (android.jar only ships stubs).
+kxml2 = { module = "net.sf.kxml:kxml2", version.ref = "kxml2" }
 
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "androidx-activityCompose" }
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "androidx-core" }

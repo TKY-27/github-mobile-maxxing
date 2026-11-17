@@ -1,5 +1,6 @@
 package dev.maxxing.github.app
 
+import androidx.compose.runtime.saveable.SaverScope
 import dev.maxxing.github.model.RepoSummary
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -57,5 +58,18 @@ class ShellNavStateTest {
         state = state.popBackOrReturnHome()
         assertNull(state.activeRepo)
         assertFalse(state.hasOverlay)
+    }
+
+    @Test
+    fun saverKeepsOnlyTheDestinationAndFallsBackToHome() {
+        val scope = SaverScope { true }
+        val sampleRepo = RepoSummary(id = "r1", name = "app", owner = "hubot", fullName = "hubot/app")
+        val state = ShellNavState(currentDestination = ShellDestination.SETTINGS)
+            .openUserProfile("hubot")
+            .openRepo(sampleRepo)
+        val saved = with(ShellNavStateSaver) { scope.save(state) }
+        assertEquals("SETTINGS", saved)
+        assertEquals(ShellNavState(currentDestination = ShellDestination.SETTINGS), ShellNavStateSaver.restore(saved!!))
+        assertEquals(ShellNavState(), ShellNavStateSaver.restore("REMOVED_TAB"))
     }
 }

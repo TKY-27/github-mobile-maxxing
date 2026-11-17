@@ -15,7 +15,6 @@ import dev.maxxing.github.model.AuthSession
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
 import java.io.File
 import java.security.KeyStore
 import javax.crypto.Cipher
@@ -38,7 +37,7 @@ object AndroidAuthContextHolder {
 private class AndroidKeystoreTokenStore(
     private val context: Context
 ) : TokenStore {
-    private val json = Json { ignoreUnknownKeys = true }
+    private val json = TokenStoreJson
     private val prefs by lazy { context.getSharedPreferences("maxxing_prefs", Context.MODE_PRIVATE) }
     private val sessionFile by lazy { File(context.filesDir, "maxxing_session.enc") }
 
