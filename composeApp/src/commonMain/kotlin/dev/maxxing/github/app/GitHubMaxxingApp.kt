@@ -57,6 +57,7 @@ import dev.maxxing.github.app.ui.ReposScreen
 import dev.maxxing.github.app.ui.SettingsScreen
 import dev.maxxing.github.app.ui.SignInScreen
 import dev.maxxing.github.app.ui.UserProfileScreen
+import dev.maxxing.github.auth.openUrlInBrowser
 import dev.maxxing.github.model.AppBranding
 import dev.maxxing.github.model.RepoSummary
 import dev.maxxing.github.network.createGitHubImageHttpClient
@@ -82,7 +83,7 @@ private enum class AppDestination(
 
 @Composable
 fun GitHubMaxxingApp(
-    deepLinkTarget: IssuePullTarget? = null,
+    deepLinkUrl: String? = null,
     onConsumeDeepLink: () -> Unit = {},
     onDarkThemeChanged: (Boolean) -> Unit = {}
 ) {
@@ -190,7 +191,7 @@ fun GitHubMaxxingApp(
             else -> {
                 MainAuthenticatedShell(
                     container = container,
-                    deepLinkTarget = deepLinkTarget,
+                    deepLinkUrl = deepLinkUrl,
                     onConsumeDeepLink = onConsumeDeepLink
                 )
             }
@@ -201,10 +202,11 @@ fun GitHubMaxxingApp(
 @Composable
 private fun MainAuthenticatedShell(
     container: AppContainer,
-    deepLinkTarget: IssuePullTarget?,
+    deepLinkUrl: String?,
     onConsumeDeepLink: () -> Unit
 ) {
     var navState by remember { mutableStateOf(ShellNavState()) }
+    var notificationDeepLinkTarget by remember { mutableStateOf<IssuePullTarget?>(null) }
     val unreadCount by container.unreadNotificationCount.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -213,9 +215,38 @@ private fun MainAuthenticatedShell(
         navState = navState.openUserProfile(targetLogin)
     }
 
-    LaunchedEffect(deepLinkTarget) {
-        if (deepLinkTarget != null) {
-            navState = navState.selectBottomDestination(ShellDestination.INBOX)
+    LaunchedEffect(deepLinkUrl) {
+        val raw = deepLinkUrl ?: return@LaunchedEffect
+        when (val parsed = parseAppDeepLink(raw)) {
+            is AppDeepLink.IssueOrPull -> {
+                if (parsed.fromNotification) {
+                    notificationDeepLinkTarget = parsed.target
+                    navState = navState.selectBottomDestination(ShellDestination.INBOX)
+                } else {
+                    navState = navState.copy(overlayIssue = parsed.target, overlayGistsUser = null)
+                    onConsumeDeepLink()
+                }
+            }
+            is AppDeepLink.Repository -> {
+                navState = navState.copy(overlayIssue = null, overlayGistsUser = null).openRepo(
+                    RepoSummary(
+                        id = "link_${parsed.owner}_${parsed.repo}",
+                        name = parsed.repo,
+                        owner = parsed.owner,
+                        fullName = "${parsed.owner}/${parsed.repo}"
+                    )
+                )
+                onConsumeDeepLink()
+            }
+            is AppDeepLink.User -> {
+                navState = navState.openUserProfile(parsed.login)
+                onConsumeDeepLink()
+            }
+            is AppDeepLink.ExternalWeb -> {
+                openUrlInBrowser(parsed.url)
+                onConsumeDeepLink()
+            }
+            null -> onConsumeDeepLink()
         }
     }
 
@@ -283,8 +314,11 @@ private fun MainAuthenticatedShell(
                         )
                         ShellDestination.INBOX -> NotificationsScreen(
                             container = container,
-                            deepLinkTarget = deepLinkTarget,
-                            onConsumeDeepLink = onConsumeDeepLink,
+                            deepLinkTarget = notificationDeepLinkTarget,
+                            onConsumeDeepLink = {
+                                notificationDeepLinkTarget = null
+                                onConsumeDeepLink()
+                            },
                             onMessage = showMessage
                         )
                         ShellDestination.ISSUES_PRS -> IssuesPullsScreen(

@@ -192,3 +192,9 @@ actual fun openUrlInBrowser(url: String): Boolean {
 }
 
 actual fun shareText(text: String, title: String?): Boolean = false
+
+actual fun inspectGitHubLinkHandling(): GitHubLinkHandlingState = GitHubLinkHandlingState()
+
+actual fun openThisAppLinkSettings(): Boolean = false
+
+actual fun openOfficialGitHubAppLinkSettings(): Boolean = false

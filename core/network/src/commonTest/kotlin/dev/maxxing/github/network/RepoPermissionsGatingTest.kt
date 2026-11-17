@@ -125,7 +125,8 @@ class RepoPermissionsGatingTest {
                               "owner": { "login": "org", "avatarUrl": "" },
                               "primaryLanguage": { "name": "Kotlin", "color": "#A97BFF" },
                               "defaultBranchRef": { "name": "main" },
-                              "issues": { "totalCount": 0 },
+                              "issues": { "totalCount": 7 },
+                              "pullRequests": { "totalCount": 3 },
                               "homepageUrl": null,
                               "licenseInfo": null,
                               "watchers": { "totalCount": 5 },
@@ -178,6 +179,8 @@ class RepoPermissionsGatingTest {
         val gql = GitHubGraphQlService(client)
         val detail = gql.fetchRepoDetail("org", "lib")
         assertEquals("READ", detail.summary.viewerPermission)
+        assertEquals(7, detail.summary.openIssuesCount)
+        assertEquals(3, detail.summary.openPullRequestsCount)
         assertTrue(detail.summary.hasKnownPermission)
         assertFalse(detail.summary.isArchived)
         assertFalse(detail.summary.hasIssuesEnabled)

@@ -23,6 +23,7 @@ data class RepoSummary(
     val stargazersCount: Int = 0,
     val forksCount: Int = 0,
     val openIssuesCount: Int = 0,
+    val openPullRequestsCount: Int? = null,
     val isPrivate: Boolean = false,
     val isFork: Boolean = false,
     val defaultBranch: String = "main",

@@ -2,7 +2,12 @@ package dev.maxxing.github.auth
 
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.content.pm.verify.domain.DomainVerificationManager
+import android.content.pm.verify.domain.DomainVerificationUserState
 import android.net.Uri
+import android.os.Build
+import android.provider.Settings
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
@@ -146,11 +151,31 @@ private class AndroidKeystoreTokenStore(
 actual fun createPlatformTokenStore(): TokenStore =
     AndroidKeystoreTokenStore(AndroidAuthContextHolder.requireContext())
 
+private const val OFFICIAL_GITHUB_PACKAGE = "com.github.android"
+
 actual fun openUrlInBrowser(url: String): Boolean {
     return try {
         val context = AndroidAuthContextHolder.requireContext()
-        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+        val parsedUri = Uri.parse(url)
+        val intent = Intent(Intent.ACTION_VIEW, parsedUri).apply {
+            addCategory(Intent.CATEGORY_BROWSABLE)
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        val pm = context.packageManager
+        val resolvedPkg = pm.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY)?.activityInfo?.packageName
+        if (resolvedPkg == context.packageName) {
+            // Avoid looping back into this app when the user enabled github.com links for github-mobile-maxxing.
+            val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://example.com")).apply {
+                addCategory(Intent.CATEGORY_BROWSABLE)
+            }
+            val externalBrowser = pm.queryIntentActivities(browserIntent, PackageManager.MATCH_DEFAULT_ONLY)
+                .firstOrNull { it.activityInfo?.packageName != null && it.activityInfo.packageName != context.packageName }
+                ?.activityInfo?.packageName
+            if (externalBrowser != null) {
+                intent.setPackage(externalBrowser)
+            } else {
+                return false
+            }
         }
         context.startActivity(intent)
         true
@@ -177,4 +202,93 @@ actual fun shareText(text: String, title: String?): Boolean {
     } catch (_: Exception) {
         false
     }
+}
+
+private fun isPackageInstalled(pm: PackageManager, packageName: String): Boolean = runCatching {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        pm.getPackageInfo(packageName, PackageManager.PackageInfoFlags.of(0))
+    } else {
+        @Suppress("DEPRECATION")
+        pm.getPackageInfo(packageName, 0)
+    }
+}.isSuccess
+
+private fun openOpenByDefaultSettings(context: Context, packageName: String): Boolean {
+    val pkgUri = Uri.parse("package:$packageName")
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        val opened = runCatching {
+            val intent = Intent(Settings.ACTION_APP_OPEN_BY_DEFAULT_SETTINGS, pkgUri).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+            true
+        }.getOrDefault(false)
+        if (opened) return true
+    }
+    return runCatching {
+        val fallback = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, pkgUri).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        context.startActivity(fallback)
+        true
+    }.getOrDefault(false)
+}
+
+actual fun inspectGitHubLinkHandling(): GitHubLinkHandlingState {
+    val context = AndroidAuthContextHolder.requireContext()
+    val pm = context.packageManager
+    val officialInstalled = isPackageInstalled(pm, OFFICIAL_GITHUB_PACKAGE)
+
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        val dvm = runCatching { context.getSystemService(DomainVerificationManager::class.java) }.getOrNull()
+        val selfState = runCatching { dvm?.getDomainVerificationUserState(context.packageName) }.getOrNull()
+        val selfGitHubState = selfState?.hostToStateMap?.get("github.com")
+        val selfHandles = selfState?.isLinkHandlingAllowed == true && (
+            selfGitHubState == DomainVerificationUserState.DOMAIN_STATE_VERIFIED ||
+                selfGitHubState == DomainVerificationUserState.DOMAIN_STATE_SELECTED
+            )
+
+        val officialHandles = if (!officialInstalled) {
+            false
+        } else {
+            runCatching { dvm?.getDomainVerificationUserState(OFFICIAL_GITHUB_PACKAGE) }.getOrNull()?.let { ghState ->
+                val ghMap = ghState.hostToStateMap["github.com"]
+                ghState.isLinkHandlingAllowed && (
+                    ghMap == DomainVerificationUserState.DOMAIN_STATE_VERIFIED ||
+                        ghMap == DomainVerificationUserState.DOMAIN_STATE_SELECTED
+                    )
+            }
+        }
+
+        return GitHubLinkHandlingState(
+            supportedOnPlatform = true,
+            thisAppHandlesGitHubLinks = selfHandles,
+            officialGitHubInstalled = officialInstalled,
+            officialGitHubHandlesLinks = officialHandles
+        )
+    }
+
+    val resolvedPkg = runCatching {
+        pm.resolveActivity(
+            Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/octocat")),
+            PackageManager.MATCH_DEFAULT_ONLY
+        )?.activityInfo?.packageName
+    }.getOrNull()
+
+    return GitHubLinkHandlingState(
+        supportedOnPlatform = true,
+        thisAppHandlesGitHubLinks = resolvedPkg == context.packageName,
+        officialGitHubInstalled = officialInstalled,
+        officialGitHubHandlesLinks = if (officialInstalled) resolvedPkg == OFFICIAL_GITHUB_PACKAGE else false
+    )
+}
+
+actual fun openThisAppLinkSettings(): Boolean {
+    val context = AndroidAuthContextHolder.requireContext()
+    return openOpenByDefaultSettings(context, context.packageName)
+}
+
+actual fun openOfficialGitHubAppLinkSettings(): Boolean {
+    val context = AndroidAuthContextHolder.requireContext()
+    return openOpenByDefaultSettings(context, OFFICIAL_GITHUB_PACKAGE)
 }

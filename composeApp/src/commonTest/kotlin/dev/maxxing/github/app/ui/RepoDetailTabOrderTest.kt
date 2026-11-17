@@ -14,4 +14,13 @@ class RepoDetailTabOrderTest {
         )
         assertFalse("Commits" in labels)
     }
+
+    @Test
+    fun `formatRepoDetailTabLabel appends open issue and PR counts in parentheses`() {
+        assertEquals("Issues (14)", formatRepoDetailTabLabel(RepoDetailTab.ISSUES, openIssuesCount = 14, openPullRequestsCount = 3))
+        assertEquals("PRs (3)", formatRepoDetailTabLabel(RepoDetailTab.PULLS, openIssuesCount = 14, openPullRequestsCount = 3))
+        assertEquals("Issues", formatRepoDetailTabLabel(RepoDetailTab.ISSUES, openIssuesCount = null, openPullRequestsCount = 3))
+        assertEquals("PRs", formatRepoDetailTabLabel(RepoDetailTab.PULLS, openIssuesCount = 14, openPullRequestsCount = null))
+        assertEquals("Code", formatRepoDetailTabLabel(RepoDetailTab.CODE, openIssuesCount = 14, openPullRequestsCount = 3))
+    }
 }

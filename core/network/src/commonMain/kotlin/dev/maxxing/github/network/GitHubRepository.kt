@@ -524,6 +524,7 @@ class GitHubRepository(
             }
         }
         _issueStateRevision.value += 1L
+        repoDetailCache.invalidate(repoKey(owner, repo))
     }
 
     suspend fun getMyIssuesAndPulls(
@@ -620,6 +621,7 @@ class GitHubRepository(
     }.onSuccess {
         myIssuesCache.clear()
         repoIssuesCache.invalidateWhere { it.owner == owner && it.repo == repo && !it.pullRequests }
+        repoDetailCache.invalidate(repoKey(owner, repo))
     }
 
     suspend fun submitPullReview(
@@ -1595,6 +1597,7 @@ class GitHubRepository(
     }.onSuccess {
         repoIssuesCache.invalidateWhere { it.owner == owner && it.repo == repo }
         myIssuesCache.clear()
+        repoDetailCache.invalidate(repoKey(owner, repo))
     }
 
     suspend fun setPullRequestDraftState(

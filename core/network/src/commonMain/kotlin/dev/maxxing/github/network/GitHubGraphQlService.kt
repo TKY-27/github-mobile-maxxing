@@ -820,6 +820,7 @@ class GitHubGraphQlService(
             stargazersCount = obj.int("stargazerCount") ?: 0,
             forksCount = obj.int("forkCount") ?: 0,
             openIssuesCount = obj.obj("issues")?.int("totalCount") ?: 0,
+            openPullRequestsCount = obj.obj("pullRequests")?.int("totalCount"),
             isPrivate = obj.bool("isPrivate") ?: false,
             isFork = obj.bool("isFork") ?: false,
             defaultBranch = defaultBranch,
@@ -1179,6 +1180,7 @@ class GitHubGraphQlService(
             primaryLanguage { name color }
             defaultBranchRef { name }
             issues(states: OPEN) { totalCount }
+            pullRequests(states: OPEN) { totalCount }
         """
 
         private const val DISCUSSION_SUMMARY_FIELDS = """

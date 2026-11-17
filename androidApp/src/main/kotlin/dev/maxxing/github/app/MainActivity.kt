@@ -26,7 +26,7 @@ import dev.maxxing.github.app.notifications.PlatformNotifier
 import dev.maxxing.github.auth.AndroidAuthContextHolder
 
 class MainActivity : ComponentActivity() {
-    private var deepLinkTarget by mutableStateOf<IssuePullTarget?>(null)
+    private var deepLinkUrl by mutableStateOf<String?>(null)
 
     private val notificationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -48,7 +48,7 @@ class MainActivity : ComponentActivity() {
         AndroidAuthContextHolder.init(this)
         PlatformNotifier.ensureInitialized()
         requestNotificationPermissionIfNeeded()
-        deepLinkTarget = parseDeepLink(intent)
+        deepLinkUrl = extractDeepLinkUrl(intent)
 
         setContent {
             var isDarkTheme by mutableStateOf(systemDark)
@@ -76,8 +76,8 @@ class MainActivity : ComponentActivity() {
                 )
             }
             GitHubMaxxingApp(
-                deepLinkTarget = deepLinkTarget,
-                onConsumeDeepLink = { deepLinkTarget = null },
+                deepLinkUrl = deepLinkUrl,
+                onConsumeDeepLink = { deepLinkUrl = null },
                 onDarkThemeChanged = { isDarkTheme = it }
             )
         }
@@ -86,7 +86,7 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        parseDeepLink(intent)?.let { deepLinkTarget = it }
+        extractDeepLinkUrl(intent)?.let { deepLinkUrl = it }
     }
 
     private fun requestNotificationPermissionIfNeeded() {
@@ -114,14 +114,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun parseDeepLink(intent: Intent?): IssuePullTarget? {
-        val data = intent?.data ?: return null
-        if (data.scheme != "githubmaxxing" || data.host != "thread") return null
-        val segments = data.pathSegments
-        if (segments.size < 3) return null
-        val owner = segments[0]
-        val repo = segments[1]
-        val number = segments[2].toIntOrNull() ?: return null
-        return IssuePullTarget(owner = owner, repo = repo, number = number)
+    private fun extractDeepLinkUrl(intent: Intent?): String? {
+        return intent?.dataString?.takeIf { it.isNotBlank() }
     }
 }

@@ -6,6 +6,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -30,7 +32,9 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -41,21 +45,33 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.composables.icons.lucide.Bell
 import com.composables.icons.lucide.Check
+import com.composables.icons.lucide.ExternalLink
+import com.composables.icons.lucide.Link2
 import com.composables.icons.lucide.LogOut
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.Palette
 import com.composables.icons.lucide.Shield
+import com.composables.icons.lucide.SlidersHorizontal
 import dev.maxxing.github.app.AppContainer
 import dev.maxxing.github.app.MaxxingBuildConfig
 import dev.maxxing.github.app.notifications.PlatformNotifier
+import dev.maxxing.github.auth.inspectGitHubLinkHandling
+import dev.maxxing.github.auth.openOfficialGitHubAppLinkSettings
+import dev.maxxing.github.auth.openThisAppLinkSettings
+import dev.maxxing.github.ui.components.MaxxingColorPickerDialog
 import dev.maxxing.github.ui.components.MaxxingDropdownSelector
 import dev.maxxing.github.ui.components.MaxxingWavyProgress
 import dev.maxxing.github.ui.components.UserAvatar
+import dev.maxxing.github.ui.components.formatSeedColorHex
 import dev.maxxing.github.ui.theme.MaxxingSeedPresets
 import kotlinx.coroutines.launch
 
@@ -71,6 +87,7 @@ private enum class PollIntervalOption(val label: String, val minutes: Int) {
     FIFTEEN("15 min", 15)
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SettingsScreen(
     container: AppContainer,
@@ -86,7 +103,20 @@ fun SettingsScreen(
     val savedClientId by container.sessionManager.clientId.collectAsState()
 
     var clientIdField by remember(savedClientId) { mutableStateOf(savedClientId) }
+    var showCustomColorPicker by remember { mutableStateOf(false) }
+    var linkHandlingState by remember { mutableStateOf(inspectGitHubLinkHandling()) }
+    val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                linkHandlingState = inspectGitHubLinkHandling()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     Box(
         modifier = Modifier
@@ -346,24 +376,47 @@ fun SettingsScreen(
                     }
 
                     Spacer(Modifier.height(16.dp))
-                    Text("Expressive Seed Accent (SPEC_2025)", style = MaterialTheme.typography.labelLarge)
+                    val activePreset = MaxxingSeedPresets.firstOrNull { it.colorHex == themePrefs.seedColorHex }
+                    val isCustomColorSelected = activePreset == null
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Expressive Seed Accent (SPEC_2025)", style = MaterialTheme.typography.labelLarge)
+                            Text(
+                                text = "${activePreset?.name ?: "Custom"} · ${formatSeedColorHex(themePrefs.seedColorHex)}",
+                                style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        TextButton(onClick = { showCustomColorPicker = true }) {
+                            Icon(Lucide.SlidersHorizontal, contentDescription = null, modifier = Modifier.size(15.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Custom")
+                        }
+                    }
                     Spacer(Modifier.height(10.dp))
 
-                    Row(
+                    FlowRow(
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         MaxxingSeedPresets.forEach { preset ->
                             val selected = themePrefs.seedColorHex == preset.colorHex
+                            val swatchColor = Color(preset.colorHex)
                             Box(
                                 modifier = Modifier
-                                    .size(42.dp)
+                                    .size(40.dp)
                                     .clip(CircleShape)
-                                    .background(Color(preset.colorHex))
+                                    .background(swatchColor)
                                     .then(
                                         if (selected) {
                                             Modifier.border(3.dp, MaterialTheme.colorScheme.onSurface, CircleShape)
-                                        } else Modifier
+                                        } else {
+                                            Modifier.border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape)
+                                        }
                                     )
                                     .clickable {
                                         scope.launch {
@@ -381,11 +434,43 @@ fun SettingsScreen(
                                     Icon(
                                         Lucide.Check,
                                         contentDescription = preset.name,
-                                        tint = Color.White,
+                                        tint = if (swatchColor.luminance() > 0.45f) Color.Black else Color.White,
                                         modifier = Modifier.size(18.dp)
                                     )
                                 }
                             }
+                        }
+
+                        val customBg = if (isCustomColorSelected) {
+                            Color(themePrefs.seedColorHex)
+                        } else {
+                            MaterialTheme.colorScheme.surfaceContainerHighest
+                        }
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(customBg)
+                                .then(
+                                    if (isCustomColorSelected) {
+                                        Modifier.border(3.dp, MaterialTheme.colorScheme.onSurface, CircleShape)
+                                    } else {
+                                        Modifier.border(1.dp, MaterialTheme.colorScheme.outline, CircleShape)
+                                    }
+                                )
+                                .clickable { showCustomColorPicker = true },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                Lucide.SlidersHorizontal,
+                                contentDescription = "Pick custom color",
+                                tint = if (isCustomColorSelected) {
+                                    if (customBg.luminance() > 0.45f) Color.Black else Color.White
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                },
+                                modifier = Modifier.size(17.dp)
+                            )
                         }
                     }
 
@@ -413,6 +498,79 @@ fun SettingsScreen(
                                 }
                             }
                         )
+                    }
+                }
+            }
+
+            if (linkHandlingState.supportedOnPlatform) {
+                ElevatedCard(
+                    shape = MaterialTheme.shapes.large,
+                    colors = CardDefaults.elevatedCardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(20.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Lucide.Link2, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                            Spacer(Modifier.width(10.dp))
+                            Text("GitHub Link Handling", style = MaterialTheme.typography.titleMedium)
+                        }
+                        val statusSummary = when {
+                            linkHandlingState.thisAppHandlesGitHubLinks ->
+                                "github.com links are set to open in github-mobile-maxxing."
+                            linkHandlingState.officialGitHubInstalled &&
+                                linkHandlingState.officialGitHubHandlesLinks == true ->
+                                "Official GitHub Mobile currently claims github.com links. Disable \"Open supported links\" there first, then enable github.com here."
+                            linkHandlingState.officialGitHubInstalled ->
+                                "Official GitHub Mobile is installed. Unlink it if it intercepts github.com links, then enable github.com for this app."
+                            else ->
+                                "Enable github.com under Open by default so web links launch directly in this app."
+                        }
+                        Text(
+                            text = statusSummary,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            if (linkHandlingState.officialGitHubInstalled) {
+                                OutlinedButton(
+                                    onClick = {
+                                        if (!openOfficialGitHubAppLinkSettings()) {
+                                            onMessage("Could not open GitHub Mobile app link settings")
+                                        }
+                                    }
+                                ) {
+                                    Icon(Lucide.ExternalLink, contentDescription = null, modifier = Modifier.size(15.dp))
+                                    Spacer(Modifier.width(6.dp))
+                                    Text("Unlink GitHub Mobile")
+                                }
+                            }
+                            FilledTonalButton(
+                                onClick = {
+                                    if (!openThisAppLinkSettings()) {
+                                        onMessage("Could not open app link settings")
+                                    }
+                                }
+                            ) {
+                                Icon(Lucide.Link2, contentDescription = null, modifier = Modifier.size(15.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text(
+                                    if (linkHandlingState.thisAppHandlesGitHubLinks) {
+                                        "Manage App Links"
+                                    } else {
+                                        "Enable github.com Links"
+                                    }
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -473,6 +631,24 @@ fun SettingsScreen(
                 )
             }
         }
+    }
+
+    if (showCustomColorPicker) {
+        MaxxingColorPickerDialog(
+            initialColorHex = themePrefs.seedColorHex,
+            onDismiss = { showCustomColorPicker = false },
+            onSelectColor = { chosenHex ->
+                showCustomColorPicker = false
+                scope.launch {
+                    container.sessionManager.updateThemePreferences(
+                        themePrefs.copy(
+                            seedColorHex = chosenHex,
+                            useDynamicColor = false
+                        )
+                    )
+                }
+            }
+        )
     }
 }
 

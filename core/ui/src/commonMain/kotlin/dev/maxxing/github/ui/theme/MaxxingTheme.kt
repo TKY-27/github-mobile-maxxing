@@ -25,11 +25,13 @@ data class SeedPreset(
 )
 
 val MaxxingSeedPresets = listOf(
-    SeedPreset("Maxxing Violet", 0xFF6E40C9),
-    SeedPreset("Terminal Emerald", 0xFF0E9F6E),
-    SeedPreset("Commit Cobalt", 0xFF2563EB),
-    SeedPreset("Diff Amber", 0xFFD97706),
-    SeedPreset("Rose Quartz", 0xFFE11D48)
+    SeedPreset("Iris", 0xFF6750A4),
+    SeedPreset("Fjord", 0xFF3B6E8C),
+    SeedPreset("Teal", 0xFF2F7D7A),
+    SeedPreset("Sage", 0xFF4A7C59),
+    SeedPreset("Ochre", 0xFFA8763E),
+    SeedPreset("Terracotta", 0xFFB85D43),
+    SeedPreset("Plum", 0xFF9C4B6E)
 )
 
 @Composable

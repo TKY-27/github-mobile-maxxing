@@ -39,3 +39,17 @@ expect fun openUrlInBrowser(url: String): Boolean
 
 /** Opens a platform-native share sheet when available; returns false if the caller should fall back to clipboard copy. */
 expect fun shareText(text: String, title: String? = null): Boolean
+
+/** Snapshot of OS-level GitHub (`github.com`) web link handling on Android. */
+data class GitHubLinkHandlingState(
+    val supportedOnPlatform: Boolean = false,
+    val thisAppHandlesGitHubLinks: Boolean = false,
+    val officialGitHubInstalled: Boolean = false,
+    val officialGitHubHandlesLinks: Boolean? = null
+)
+
+expect fun inspectGitHubLinkHandling(): GitHubLinkHandlingState
+
+expect fun openThisAppLinkSettings(): Boolean
+
+expect fun openOfficialGitHubAppLinkSettings(): Boolean

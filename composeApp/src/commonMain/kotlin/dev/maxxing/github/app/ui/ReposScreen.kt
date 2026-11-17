@@ -212,6 +212,16 @@ internal enum class RepoDetailTab(val label: String) {
     INSIGHTS("Insights")
 }
 
+internal fun formatRepoDetailTabLabel(
+    tab: RepoDetailTab,
+    openIssuesCount: Int?,
+    openPullRequestsCount: Int?
+): String = when (tab) {
+    RepoDetailTab.ISSUES -> openIssuesCount?.let { "${tab.label} ($it)" } ?: tab.label
+    RepoDetailTab.PULLS -> openPullRequestsCount?.let { "${tab.label} ($it)" } ?: tab.label
+    else -> tab.label
+}
+
 private val TRENDING_LANGUAGES = listOf("All", "Kotlin", "TypeScript", "Python", "Rust", "Go", "Swift")
 
 @Composable
@@ -1831,6 +1841,8 @@ fun RepoDetailScreen(
                 pullRequests = true,
                 stateFilter = pullStateFilter
             )?.let { repoPulls = it }
+            container.repository.getRepoDetail(repo.owner, repo.name, forceRefresh = true)
+                .onSuccess { detail = it }
         }
     }
 
@@ -2273,6 +2285,18 @@ fun RepoDetailScreen(
 
                 Spacer(Modifier.height(6.dp))
                 // 3) Underlined Scrollable Section Tabs (distinct from action buttons above)
+                val resolvedOpenIssuesCount: Int? = when {
+                    detail != null -> detail!!.summary.openIssuesCount
+                    repo.openPullRequestsCount != null -> repo.openIssuesCount
+                    issueStateFilter == IssueStateFilter.OPEN && repoIssues != null -> repoIssues!!.size
+                    else -> null
+                }
+                val resolvedOpenPullsCount: Int? = when {
+                    detail != null -> detail!!.summary.openPullRequestsCount
+                    repo.openPullRequestsCount != null -> repo.openPullRequestsCount
+                    pullStateFilter == IssueStateFilter.OPEN && repoPulls != null -> repoPulls!!.size
+                    else -> null
+                }
                 PrimaryScrollableTabRow(
                     selectedTabIndex = RepoDetailTab.entries.indexOf(activeTab),
                     containerColor = Color.Transparent,
@@ -2320,7 +2344,11 @@ fun RepoDetailScreen(
                                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
                                     Icon(icon, contentDescription = null, modifier = Modifier.size(15.dp))
-                                    Text(tab.label, maxLines = 1, softWrap = false)
+                                    Text(
+                                        text = formatRepoDetailTabLabel(tab, resolvedOpenIssuesCount, resolvedOpenPullsCount),
+                                        maxLines = 1,
+                                        softWrap = false
+                                    )
                                 }
                             }
                         )
