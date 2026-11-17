@@ -146,6 +146,7 @@ import dev.maxxing.github.model.IssueOrPullKind
 import dev.maxxing.github.model.IssueOrPullState
 import dev.maxxing.github.model.IssueOrPullSummary
 import dev.maxxing.github.model.IssueStateFilter
+import dev.maxxing.github.model.PullFileChange
 import dev.maxxing.github.model.ReleaseSummary
 import dev.maxxing.github.model.RepoDetail
 import dev.maxxing.github.model.RepoInsightsData
@@ -166,6 +167,7 @@ import dev.maxxing.github.ui.components.GitHubMarkdown
 import dev.maxxing.github.ui.components.GitHubMarkdownPreNormalized
 import dev.maxxing.github.ui.components.MaxxingDropdownSelector
 import dev.maxxing.github.ui.components.MaxxingFilledIcons
+import dev.maxxing.github.ui.components.MaxxingFullScreenDiffViewer
 import dev.maxxing.github.ui.components.MaxxingFullScreenEditorScaffold
 import dev.maxxing.github.ui.components.MaxxingLoadingState
 import dev.maxxing.github.ui.components.MaxxingPredictiveBackContainer
@@ -1255,6 +1257,7 @@ fun RepoDetailScreen(
     }
     var insightsLoading by remember(repo.fullName) { mutableStateOf(false) }
     var insightsError by remember(repo.fullName) { mutableStateOf<String?>(null) }
+    var fullScreenDiffContext by remember(repo.fullName) { mutableStateOf<Pair<PullFileChange, List<PullFileChange>>?>(null) }
 
     fun loadDiscussions(categoryId: String? = selectedDiscussionCategoryId, forceRefresh: Boolean = false) {
         val reqSeq = ++discussionsRequestSeq
@@ -1671,7 +1674,8 @@ fun RepoDetailScreen(
         showCreateReleaseDialog ||
         showCreateDiscussionDialog ||
         showCreatePrDialog ||
-        showCreateIssueDialog
+        showCreateIssueDialog ||
+        fullScreenDiffContext != null
 
     val effectiveParent = detail?.summary?.parent ?: repo.parent
     val isForkRepo = detail?.summary?.isFork ?: repo.isFork || effectiveParent != null
@@ -2286,7 +2290,10 @@ fun RepoDetailScreen(
                                     openedCommitDetail = null
                                 },
                                 onOpenParent = { parentSha -> openCommit(parentSha) },
-                                onOpenUser = onOpenUser
+                                onOpenUser = onOpenUser,
+                                onOpenFullScreenDiff = { file, allFiles ->
+                                    fullScreenDiffContext = file to allFiles
+                                }
                             )
                         }
                         showCompareView -> {
@@ -2310,7 +2317,10 @@ fun RepoDetailScreen(
                                 onRefresh = { runCompare(compareBase, compareHead, forceRefresh = true) },
                                 onBackToCommits = { showCompareView = false },
                                 onOpenCommit = { sha -> openCommit(sha) },
-                                onOpenUser = onOpenUser
+                                onOpenUser = onOpenUser,
+                                onOpenFullScreenDiff = { file, allFiles ->
+                                    fullScreenDiffContext = file to allFiles
+                                }
                             )
                         }
                         else -> {
@@ -2963,6 +2973,23 @@ fun RepoDetailScreen(
                     modifier = Modifier.fillMaxWidth()
                 )
             }
+        )
+    }
+
+    fullScreenDiffContext?.let { (activeFile, allFiles) ->
+        MaxxingFullScreenDiffViewer(
+            file = activeFile,
+            files = allFiles.ifEmpty { listOf(activeFile) },
+            onDismiss = { fullScreenDiffContext = null },
+            onSelectFile = { next -> fullScreenDiffContext = next to allFiles },
+            backEnabled = !showPeopleDialog &&
+                !showCreatePrDialog &&
+                !showFileEditorDialog &&
+                !showDeleteFileDialog &&
+                !showCreateIssueDialog &&
+                !showDispatchDialog &&
+                !showCreateReleaseDialog &&
+                !showCreateDiscussionDialog
         )
     }
 
@@ -3728,7 +3755,8 @@ private fun RepoCommitDetailView(
     commitAvatarResolver: (CommitSummary) -> String = { it.authorAvatarUrl },
     onBack: () -> Unit,
     onOpenParent: (String) -> Unit,
-    onOpenUser: (String) -> Unit
+    onOpenUser: (String) -> Unit,
+    onOpenFullScreenDiff: (PullFileChange, List<PullFileChange>) -> Unit = { _, _ -> }
 ) {
     val expandedFiles = remember(sha) { mutableStateMapOf<String, Boolean>() }
 
@@ -3846,7 +3874,8 @@ private fun RepoCommitDetailView(
                         diffFileLazyItems(
                             file = file,
                             expanded = isExpanded,
-                            onToggleExpand = { expandedFiles[file.filename] = !isExpanded }
+                            onToggleExpand = { expandedFiles[file.filename] = !isExpanded },
+                            onOpenFullScreen = { onOpenFullScreenDiff(file, detail.files) }
                         )
                     }
                 }
@@ -3870,7 +3899,8 @@ private fun RepoBranchCompareView(
     onBackToCommits: () -> Unit,
     onOpenCommit: (String) -> Unit,
     onOpenUser: (String) -> Unit,
-    commitAvatarResolver: (CommitSummary) -> String = { it.authorAvatarUrl }
+    commitAvatarResolver: (CommitSummary) -> String = { it.authorAvatarUrl },
+    onOpenFullScreenDiff: (PullFileChange, List<PullFileChange>) -> Unit = { _, _ -> }
 ) {
     val expandedFiles = remember(baseRef, headRef) { mutableStateMapOf<String, Boolean>() }
 
@@ -3998,7 +4028,8 @@ private fun RepoBranchCompareView(
                             diffFileLazyItems(
                                 file = file,
                                 expanded = isExpanded,
-                                onToggleExpand = { expandedFiles[file.filename] = !isExpanded }
+                                onToggleExpand = { expandedFiles[file.filename] = !isExpanded },
+                                onOpenFullScreen = { onOpenFullScreenDiff(file, result.files) }
                             )
                         }
                     }

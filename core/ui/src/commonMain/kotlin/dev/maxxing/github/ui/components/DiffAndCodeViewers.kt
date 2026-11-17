@@ -3,29 +3,38 @@ package dev.maxxing.github.ui.components
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -46,11 +55,15 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.composables.icons.lucide.ArrowLeft
+import com.composables.icons.lucide.ArrowRight
 import com.composables.icons.lucide.ChevronDown
 import com.composables.icons.lucide.ChevronRight
 import com.composables.icons.lucide.FileCode
 import com.composables.icons.lucide.Lucide
+import com.composables.icons.lucide.Maximize2
 import com.composables.icons.lucide.MessageSquarePlus
+import com.composables.icons.lucide.X
 import dev.maxxing.github.model.DiffLine
 import dev.maxxing.github.model.DiffLineKind
 import dev.maxxing.github.model.FileChangeStatus
@@ -64,14 +77,16 @@ fun LazyListScope.diffFileLazyItems(
     expanded: Boolean,
     onToggleExpand: () -> Unit,
     onCommentFile: (() -> Unit)? = null,
-    onClickLine: ((DiffLine) -> Unit)? = null
+    onClickLine: ((DiffLine) -> Unit)? = null,
+    onOpenFullScreen: (() -> Unit)? = null
 ) {
     item(key = "diff_hdr_${file.filename}", contentType = "diff_header") {
         DiffFileHeaderRow(
             file = file,
             expanded = expanded,
             onToggleExpand = onToggleExpand,
-            onCommentFile = onCommentFile
+            onCommentFile = onCommentFile,
+            onOpenFullScreen = onOpenFullScreen
         )
     }
 
@@ -81,7 +96,9 @@ fun LazyListScope.diffFileLazyItems(
         item(key = "diff_empty_${file.filename}", contentType = "diff_empty") {
             Surface(
                 color = MaterialTheme.colorScheme.surfaceContainerLow,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .let { if (onOpenFullScreen != null) it.clickable(onClick = onOpenFullScreen) else it }
             ) {
                 Text(
                     text = if (file.patch == null) "Binary file or diff too large to display inline." else "Empty patch.",
@@ -94,11 +111,15 @@ fun LazyListScope.diffFileLazyItems(
         return
     }
 
+    val lineDigits = computeDiffMaxLineDigits(file)
+
     file.hunks.forEachIndexed { hunkIdx, hunk ->
         item(key = "diff_hunk_${file.filename}_$hunkIdx", contentType = "diff_hunk") {
             Surface(
                 color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.45f),
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .let { if (onOpenFullScreen != null) it.clickable(onClick = onOpenFullScreen) else it }
             ) {
                 Text(
                     text = hunk.header,
@@ -116,11 +137,15 @@ fun LazyListScope.diffFileLazyItems(
             key = { lineIdx, _ -> "diff_line_${file.filename}_${hunkIdx}_$lineIdx" },
             contentType = { _, _ -> "diff_line" }
         ) { _, line ->
+            val effectiveLineClick = when {
+                onOpenFullScreen != null -> { { onOpenFullScreen() } }
+                onClickLine != null && line.kind != DiffLineKind.META -> { { onClickLine(line) } }
+                else -> null
+            }
             DiffLineRow(
                 line = line,
-                onClick = if (onClickLine != null && line.kind != DiffLineKind.META) {
-                    { onClickLine(line) }
-                } else null
+                lineDigits = lineDigits,
+                onClick = effectiveLineClick
             )
         }
     }
@@ -131,7 +156,8 @@ private fun DiffFileHeaderRow(
     file: PullFileChange,
     expanded: Boolean,
     onToggleExpand: () -> Unit,
-    onCommentFile: (() -> Unit)? = null
+    onCommentFile: (() -> Unit)? = null,
+    onOpenFullScreen: (() -> Unit)? = null
 ) {
     val statusColor = when (file.status) {
         FileChangeStatus.ADDED -> Color(0xFF16A34A)
@@ -197,6 +223,16 @@ private fun DiffFileHeaderRow(
                 containerColor = statusColor.copy(alpha = 0.2f),
                 contentColor = MaterialTheme.colorScheme.onSurface
             )
+            if (onOpenFullScreen != null) {
+                IconButton(onClick = onOpenFullScreen, modifier = Modifier.size(30.dp)) {
+                    Icon(
+                        imageVector = Lucide.Maximize2,
+                        contentDescription = "Open full-screen diff",
+                        modifier = Modifier.size(15.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
             if (onCommentFile != null) {
                 IconButton(onClick = onCommentFile, modifier = Modifier.size(30.dp)) {
                     Icon(
@@ -211,9 +247,24 @@ private fun DiffFileHeaderRow(
     }
 }
 
+internal fun computeDiffMaxLineDigits(file: PullFileChange): Int {
+    val maxLine = file.hunks.maxOfOrNull { hunk ->
+        hunk.lines.maxOfOrNull { line ->
+            maxOf(line.oldLineNumber ?: 0, line.newLineNumber ?: 0)
+        } ?: 0
+    } ?: 0
+    return maxOf(4, maxLine.toString().length)
+}
+
 @Composable
 private fun DiffLineRow(
     line: DiffLine,
+    lineDigits: Int = 4,
+    wrapLines: Boolean = false,
+    fontSizeSp: Float = 12f,
+    lineHeightSp: Float = 18f,
+    verticalPaddingDp: Float = 1f,
+    modifier: Modifier = Modifier,
     onClick: (() -> Unit)? = null
 ) {
     val lineBg = when (line.kind) {
@@ -235,21 +286,21 @@ private fun DiffLineRow(
     }
 
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .background(lineBg)
             .let { if (onClick != null) it.clickable(onClick = onClick) else it }
-            .padding(horizontal = 10.dp, vertical = 1.dp),
-        verticalAlignment = Alignment.CenterVertically
+            .padding(horizontal = 10.dp, vertical = verticalPaddingDp.dp),
+        verticalAlignment = Alignment.Top
     ) {
         Text(
-            text = line.oldLineNumber?.toString()?.padStart(4, ' ') ?: "    ",
+            text = line.oldLineNumber?.toString()?.padStart(lineDigits, ' ') ?: " ".repeat(lineDigits),
             style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
         )
         Spacer(Modifier.width(6.dp))
         Text(
-            text = line.newLineNumber?.toString()?.padStart(4, ' ') ?: "    ",
+            text = line.newLineNumber?.toString()?.padStart(lineDigits, ' ') ?: " ".repeat(lineDigits),
             style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
         )
@@ -267,14 +318,237 @@ private fun DiffLineRow(
             text = line.content,
             style = MaterialTheme.typography.bodySmall.copy(
                 fontFamily = FontFamily.Monospace,
-                fontSize = 12.sp,
-                lineHeight = 18.sp
+                fontSize = fontSizeSp.sp,
+                lineHeight = lineHeightSp.sp
             ),
             color = MaterialTheme.colorScheme.onSurface,
-            maxLines = 1,
-            softWrap = false,
-            overflow = TextOverflow.Ellipsis
+            maxLines = if (wrapLines) Int.MAX_VALUE else 1,
+            softWrap = wrapLines,
+            overflow = if (wrapLines) TextOverflow.Clip else TextOverflow.Visible
         )
+    }
+}
+
+/**
+ * Full-screen diff viewer launched when tapping a diff section, matching the full-screen
+ * editor visual hierarchy with horizontal scroll / line wrap toggle, prev/next file switching,
+ * and optional inline PR review comment support.
+ */
+@Composable
+fun MaxxingFullScreenDiffViewer(
+    file: PullFileChange,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
+    files: List<PullFileChange> = listOf(file),
+    onSelectFile: ((PullFileChange) -> Unit)? = null,
+    onCommentFile: (() -> Unit)? = null,
+    onCommentLine: ((DiffLine) -> Unit)? = null,
+    backEnabled: Boolean = true
+) {
+    var wrapLines by remember { mutableStateOf(false) }
+    val currentIndex = remember(file.filename, files) {
+        files.indexOfFirst { it.filename == file.filename }.coerceAtLeast(0)
+    }
+    val hasPrev = onSelectFile != null && currentIndex > 0
+    val hasNext = onSelectFile != null && currentIndex in 0 until files.lastIndex
+    val lineDigits = remember(file) { computeDiffMaxLineDigits(file) }
+    val listState = rememberLazyListState(initialFirstVisibleItemIndex = 0)
+    val hScroll = rememberScrollState()
+
+    val statusColor = when (file.status) {
+        FileChangeStatus.ADDED -> Color(0xFF16A34A)
+        FileChangeStatus.REMOVED -> MaterialTheme.colorScheme.error
+        FileChangeStatus.RENAMED -> MaterialTheme.colorScheme.tertiary
+        else -> MaterialTheme.colorScheme.primary
+    }
+
+    MaxxingPredictiveBackContainer(
+        enabled = backEnabled,
+        onBack = onDismiss,
+        modifier = modifier
+    ) {
+        Surface(
+            color = MaterialTheme.colorScheme.surface,
+            modifier = Modifier.fillMaxSize()
+        ) {
+            Column(modifier = Modifier.fillMaxSize()) {
+                Surface(color = MaterialTheme.colorScheme.surfaceContainerLow) {
+                    Column(modifier = Modifier.fillMaxWidth().statusBarsPadding()) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 8.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            IconButton(onClick = onDismiss) {
+                                Icon(Lucide.X, contentDescription = "Close diff viewer")
+                            }
+                            Column(modifier = Modifier.weight(1f).padding(horizontal = 4.dp)) {
+                                Text(
+                                    text = file.filename.substringAfterLast('/'),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = "+${file.additions} / -${file.deletions} · ${file.filename}",
+                                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            ExpressiveStatusPill(
+                                label = file.status.name.take(3),
+                                containerColor = statusColor.copy(alpha = 0.2f),
+                                contentColor = MaterialTheme.colorScheme.onSurface
+                            )
+                            TextButton(onClick = { wrapLines = !wrapLines }) {
+                                Text(if (wrapLines) "Scroll" else "Wrap", maxLines = 1, softWrap = false)
+                            }
+                            if (onCommentFile != null) {
+                                IconButton(onClick = onCommentFile) {
+                                    Icon(
+                                        imageVector = Lucide.MessageSquarePlus,
+                                        contentDescription = "Comment on file",
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+                BoxWithConstraints(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                    val minRowWidth = maxWidth
+                    val rowModifier = if (wrapLines) Modifier.fillMaxWidth() else Modifier.widthIn(min = minRowWidth)
+                    val listModifier = if (wrapLines) {
+                        Modifier.fillMaxSize()
+                    } else {
+                        Modifier.fillMaxSize().horizontalScroll(hScroll)
+                    }
+
+                    SelectionContainer(modifier = Modifier.fillMaxSize()) {
+                        LazyColumn(
+                            state = listState,
+                            modifier = listModifier,
+                            contentPadding = PaddingValues(vertical = 8.dp)
+                        ) {
+                            if (file.hunks.isEmpty()) {
+                                item(key = "fs_empty_${file.filename}") {
+                                    Surface(
+                                        color = MaterialTheme.colorScheme.surfaceContainerLow,
+                                        modifier = rowModifier
+                                    ) {
+                                        Text(
+                                            text = if (file.patch == null) {
+                                                "Binary file or diff too large to display inline."
+                                            } else {
+                                                "Empty patch."
+                                            },
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.padding(20.dp)
+                                        )
+                                    }
+                                }
+                            } else {
+                                file.hunks.forEachIndexed { hunkIdx, hunk ->
+                                    item(key = "fs_hunk_${file.filename}_$hunkIdx", contentType = "fs_diff_hunk") {
+                                        Surface(
+                                            color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.45f),
+                                            modifier = rowModifier
+                                        ) {
+                                            Text(
+                                                text = hunk.header,
+                                                style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                                                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                                maxLines = if (wrapLines) Int.MAX_VALUE else 1,
+                                                softWrap = wrapLines,
+                                                overflow = if (wrapLines) TextOverflow.Clip else TextOverflow.Visible,
+                                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                                            )
+                                        }
+                                    }
+                                    itemsIndexed(
+                                        items = hunk.lines,
+                                        key = { lineIdx, _ -> "fs_line_${file.filename}_${hunkIdx}_$lineIdx" },
+                                        contentType = { _, _ -> "fs_diff_line" }
+                                    ) { _, line ->
+                                        DiffLineRow(
+                                            line = line,
+                                            lineDigits = lineDigits,
+                                            wrapLines = wrapLines,
+                                            fontSizeSp = 12.5f,
+                                            lineHeightSp = 19f,
+                                            verticalPaddingDp = 2.5f,
+                                            modifier = rowModifier,
+                                            onClick = if (onCommentLine != null && line.kind != DiffLineKind.META) {
+                                                { onCommentLine(line) }
+                                            } else null
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if ((files.size > 1 && onSelectFile != null) || onCommentLine != null) {
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    Surface(color = MaterialTheme.colorScheme.surfaceContainerLow) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .navigationBarsPadding()
+                                .padding(horizontal = 14.dp, vertical = 8.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            if (files.size > 1 && onSelectFile != null) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    FilledTonalButton(
+                                        enabled = hasPrev,
+                                        onClick = { if (hasPrev) onSelectFile(files[currentIndex - 1]) },
+                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                    ) {
+                                        Icon(Lucide.ArrowLeft, contentDescription = null, modifier = Modifier.size(15.dp))
+                                        Spacer(Modifier.width(4.dp))
+                                        Text("Prev file", maxLines = 1, softWrap = false)
+                                    }
+                                    Text(
+                                        text = "${currentIndex + 1} / ${files.size}",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    FilledTonalButton(
+                                        enabled = hasNext,
+                                        onClick = { if (hasNext) onSelectFile(files[currentIndex + 1]) },
+                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                    ) {
+                                        Text("Next file", maxLines = 1, softWrap = false)
+                                        Spacer(Modifier.width(4.dp))
+                                        Icon(Lucide.ArrowRight, contentDescription = null, modifier = Modifier.size(15.dp))
+                                    }
+                                }
+                            } else if (onCommentLine != null) {
+                                Text(
+                                    text = "Tap any diff line to add a review comment.",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 

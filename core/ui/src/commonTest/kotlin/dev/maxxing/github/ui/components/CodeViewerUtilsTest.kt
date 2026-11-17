@@ -1,6 +1,11 @@
 package dev.maxxing.github.ui.components
 
 import androidx.compose.ui.graphics.Color
+import dev.maxxing.github.model.DiffHunk
+import dev.maxxing.github.model.DiffLine
+import dev.maxxing.github.model.DiffLineKind
+import dev.maxxing.github.model.FileChangeStatus
+import dev.maxxing.github.model.PullFileChange
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -60,5 +65,37 @@ class CodeViewerUtilsTest {
         )
         assertEquals(1, fastUniform.spanStyles.size)
         assertEquals(minified, fastUniform.text)
+    }
+
+    @Test
+    fun `computeDiffMaxLineDigits sizes gutter to at least 4 digits and expands for huge files`() {
+        val emptyFile = PullFileChange(
+            filename = "Empty.kt",
+            status = FileChangeStatus.MODIFIED,
+            additions = 0,
+            deletions = 0
+        )
+        assertEquals(4, computeDiffMaxLineDigits(emptyFile))
+
+        val hugeFile = PullFileChange(
+            filename = "Huge.kt",
+            status = FileChangeStatus.MODIFIED,
+            additions = 1,
+            deletions = 0,
+            hunks = listOf(
+                DiffHunk(
+                    header = "@@ -12340,1 +12340,2 @@",
+                    oldStart = 12340,
+                    oldCount = 1,
+                    newStart = 12340,
+                    newCount = 2,
+                    lines = listOf(
+                        DiffLine(DiffLineKind.CONTEXT, "keep", oldLineNumber = 12340, newLineNumber = 12340),
+                        DiffLine(DiffLineKind.ADDED, "added", oldLineNumber = null, newLineNumber = 100000)
+                    )
+                )
+            )
+        )
+        assertEquals(6, computeDiffMaxLineDigits(hugeFile))
     }
 }

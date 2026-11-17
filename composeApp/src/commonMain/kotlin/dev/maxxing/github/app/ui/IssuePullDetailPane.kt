@@ -87,6 +87,8 @@ import dev.maxxing.github.app.IssuePullTarget
 import dev.maxxing.github.auth.openUrlInBrowser
 import dev.maxxing.github.model.CheckRunSummary
 import dev.maxxing.github.model.IssueOrPullDetail
+import dev.maxxing.github.model.DiffLine
+import dev.maxxing.github.model.DiffLineKind
 import dev.maxxing.github.model.IssueOrPullKind
 import dev.maxxing.github.model.IssueOrPullState
 import dev.maxxing.github.model.LabelTag
@@ -102,6 +104,7 @@ import dev.maxxing.github.ui.components.GitHubLabelChip
 import dev.maxxing.github.ui.components.GitHubMarkdown
 import dev.maxxing.github.ui.components.MaxxingDropdownSelector
 import dev.maxxing.github.ui.components.MaxxingFloatingToolbar
+import dev.maxxing.github.ui.components.MaxxingFullScreenDiffViewer
 import dev.maxxing.github.ui.components.MaxxingFullScreenEditorScaffold
 import dev.maxxing.github.ui.components.MaxxingLoadingState
 import dev.maxxing.github.ui.components.MaxxingSplitActionButton
@@ -165,6 +168,7 @@ fun IssuePullDetailPane(
 
     var pendingDiffCommentTarget by remember(target) { mutableStateOf<Triple<String, Int?, String>?>(null) }
     var diffCommentBody by remember { mutableStateOf("") }
+    var fullScreenDiffFile by remember(target) { mutableStateOf<PullFileChange?>(null) }
     var editingComment by remember { mutableStateOf<TimelineEvent.CommentEvent?>(null) }
     var editingCommentBody by remember { mutableStateOf("") }
     var deletingComment by remember { mutableStateOf<TimelineEvent.CommentEvent?>(null) }
@@ -612,20 +616,11 @@ fun IssuePullDetailPane(
                                     file = file,
                                     expanded = isExpanded,
                                     onToggleExpand = { expandedFiles[file.filename] = !isExpanded },
+                                    onOpenFullScreen = { fullScreenDiffFile = file },
                                     onCommentFile = if (!item.headRefOid.isNullOrBlank()) {
                                         {
                                             diffCommentBody = ""
                                             pendingDiffCommentTarget = Triple(file.filename, null, "RIGHT")
-                                        }
-                                    } else null,
-                                    onClickLine = if (!item.headRefOid.isNullOrBlank()) {
-                                        { line ->
-                                            val side = if (line.kind == dev.maxxing.github.model.DiffLineKind.REMOVED) "LEFT" else "RIGHT"
-                                            val lineNum = if (side == "LEFT") line.oldLineNumber else line.newLineNumber
-                                            if (lineNum != null) {
-                                                diffCommentBody = ""
-                                                pendingDiffCommentTarget = Triple(file.filename, lineNum, side)
-                                            }
                                         }
                                     } else null
                                 )
@@ -813,6 +808,43 @@ fun IssuePullDetailPane(
                 }
             }
         }
+    }
+
+    fullScreenDiffFile?.let { requestedFile ->
+        val activeFile = files.firstOrNull { it.filename == requestedFile.filename } ?: requestedFile
+        val canInlineComment = !detail?.headRefOid.isNullOrBlank()
+        val hasDialogAbove = showCommentDialog ||
+            showReviewDialog ||
+            pendingDiffCommentTarget != null ||
+            editingComment != null ||
+            deletingComment != null ||
+            showLabelsDialog ||
+            showAssigneesDialog ||
+            showMilestoneDialog ||
+            showReviewersDialog
+        MaxxingFullScreenDiffViewer(
+            file = activeFile,
+            files = files.ifEmpty { listOf(activeFile) },
+            onDismiss = { fullScreenDiffFile = null },
+            onSelectFile = { next -> fullScreenDiffFile = next },
+            onCommentFile = if (canInlineComment) {
+                {
+                    diffCommentBody = ""
+                    pendingDiffCommentTarget = Triple(activeFile.filename, null, "RIGHT")
+                }
+            } else null,
+            onCommentLine = if (canInlineComment) {
+                { line: DiffLine ->
+                    val side = if (line.kind == DiffLineKind.REMOVED) "LEFT" else "RIGHT"
+                    val lineNum = if (side == "LEFT") line.oldLineNumber else line.newLineNumber
+                    if (lineNum != null) {
+                        diffCommentBody = ""
+                        pendingDiffCommentTarget = Triple(activeFile.filename, lineNum, side)
+                    }
+                }
+            } else null,
+            backEnabled = !hasDialogAbove
+        )
     }
 
     if (showCommentDialog) {
